@@ -1,1 +1,18 @@
-/* You can add global styles to this file, and also import other style files */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dusty-teal text-navy-blue font-sans antialiased min-h-screen m-0 p-0;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-teal-primary text-white rounded-full px-6 py-3.5 font-semibold text-center transition-opacity hover:opacity-90 active:scale-95 inline-block w-full;
+  }
+  .btn-secondary {
+    @apply border-2 border-teal-primary text-teal-primary rounded-full px-6 py-3.5 font-semibold text-center transition-colors hover:bg-teal-primary hover:text-white bg-transparent active:scale-95 inline-block w-full;
+  }
+}
