@@ -1,0 +1,20 @@
+<div class="flex flex-col items-center justify-center min-h-screen bg-sand p-6">
+  <div class="w-full max-w-sm bg-white/80 p-8 rounded-xl shadow-sm border border-white">
+    <h1 class="text-2xl font-serif tracking-widest text-navy-blue mb-2 text-center">ADMIN PANEL</h1>
+    <p class="text-sm text-navy-blue/60 text-center mb-8">Wprowadź hasło, aby uzyskać dostęp</p>
+
+    <div class="mb-6">
+      <input type="password" [(ngModel)]="password" placeholder="Hasło (np. admin)"
+             (keyup.enter)="login()"
+             class="w-full px-4 py-3 bg-white border border-navy-blue/10 rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-teal-primary text-navy-blue">
+    </div>
+
+    <div *ngIf="error" class="mb-4 text-center text-sm text-red-500 font-medium">
+      {{ error }}
+    </div>
+
+    <button (click)="login()" [disabled]="!password || isLoading" class="btn-primary w-full disabled:opacity-50">
+      {{ isLoading ? 'Logowanie...' : 'Zaloguj' }}
+    </button>
+  </div>
+</div>

@@ -1,0 +1,38 @@
+<div class="print-page">
+
+  <!-- Screen-only action buttons -->
+  <div class="print-actions">
+    <button (click)="goBack()"
+      class="text-sm text-navy-blue/70 hover:text-navy-blue border border-navy-blue/20 px-4 py-2 rounded-lg">
+      ← Wróć do Panelu
+    </button>
+    <button (click)="print()"
+      class="text-sm bg-navy-blue text-white px-6 py-2 rounded-lg hover:bg-navy-blue/90 shadow">
+      🖨️ Drukuj / Zapisz PDF
+    </button>
+  </div>
+
+  <!-- The actual printable card -->
+  <div class="qr-card">
+    <div class="card-ornament">❧ ❧ ❧</div>
+
+    <p class="card-title">Galeria Zdjęć</p>
+    <h1 class="card-event-name">{{ eventName }}</h1>
+
+    <div class="divider"></div>
+
+    <div class="qr-wrapper">
+      <qrcode *ngIf="eventUrl" [qrdata]="eventUrl" [width]="256" [errorCorrectionLevel]="'M'"></qrcode>
+    </div>
+
+    <p class="card-instruction">
+      📷 Zrób zdjęcie i udostępnij nam swoje wspomnienia!<br>
+      Zeskanuj kod QR telefonem, aby dołączyć do naszej galerii.
+    </p>
+
+    <div class="divider"></div>
+
+    <p class="card-url">{{ eventUrl }}</p>
+  </div>
+
+</div>
