@@ -1,0 +1,45 @@
+PRD: Wedding Gallery App
+Wersja: 1.0 | Status: Draft | Autor: AI Thought Partner
+1. Cel Biznesowy
+Stworzenie lekkiej, samoobsługowej platformy do gromadzenia zdjęć od gości
+weselnych w czasie rzeczywistym. Kluczowe jest wyeliminowanie barier wejścia (brak
+aplikacji do pobrania, brak rejestracji).
+2. Architektura Systemu
+Backend: .NET 8 Web API (C#)
+Frontend: Angular 17+ (SPA/PWA)
+Baza Danych: PostgreSQL
+Infrastruktura: Docker Compose (Self-hosted na VM)
+3. Wymagania Funkcjonalne
+3.1. Moduł Gościa
+Skanuj i Wrzuć: Dostęp przez URL z tokenem w QR kodzie.
+Multi-upload: Przesyłanie wielu plików JPG/PNG jednocześnie.
+Podgląd: Możliwość opcjonalnego przeglądania galerii wspólnej.
+3.2. Moduł Admina (Para Młoda)
+Panel Dashboard: Statystyki wgranych plików.
+Zarządzanie: Usuwanie duplikatów lub nieodpowiednich zdjęć.
+Eksport: Pobieranie wszystkich zdjęć jako jeden plik .ZIP .
+• 
+• 
+• 
+• 
+• 
+• 
+4. Model Danych (PostgreSQL)
+Tabela Kluczowe Pola Opis
+Events Id, Name, Slug, AccessToken Definicja wydarzenia i tokenu w
+URL.
+Photos Id, EventId, FileName, OriginalPath, ThumbPath,
+CreatedAt
+Metadane zdjęć i ścieżki do
+plików.
+5. Wytyczne Deploymentu (Docker)
+Aplikacja musi składać się z trzech serwisów: api, web, db. Dane (zdjęcia) muszą być
+przechowywane w zamontowanym wolumenie poza kontenerem API, aby uniknąć
+utraty danych przy restarcie.
+6. Planowane Endpointy API
+POST /api/photos/upload - Przesyłanie plików (multipart/form-data).
+GET /api/photos/{eventSlug} - Pobieranie listy zdjęć dla galerii.
+GET /api/admin/download-all - Generowanie i pobieranie ZIP .
+• 
+• 
+• 

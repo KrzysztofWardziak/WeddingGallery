@@ -1,0 +1,20 @@
+PRD: Wedding Gallery App (v2)
+Workflow: Agile / Feature Branching
+1. Zasady Pracy (Workflow Rules)
+1. Zarządzanie Gitem: Każda zmiana musi odbywać się na nowym branchu
+(feature/ lub fix/).
+2. Weryfikacja Builda: Przed mergem należy sprawdzić poprawność kompilacji
+(dotnet build / ng build).
+3. Code Review: AI musi dostarczyć krótkie podsumowanie zmian i potencjalne
+ryzyka.
+4. Infrastruktura: Zmiany w środowisku muszą być odzwierciedlone w docker-
+compose.yml. 
+2. Architektura i Stos
+.NET 8 API, Angular 17, PostgreSQL, Docker (Self-hosted VM).
+3. Kluczowe Funkcjonalności
+Upload zdjęć (bulk) bez logowania.
+Automatyczne generowanie miniaturek (thumbnails).
+Pobieranie paczki ZIP przez Admina.
+• 
+• 
+• 
