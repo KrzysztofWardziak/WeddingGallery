@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: wedding_gallery
+      POSTGRES_USER: wedding_user
+      POSTGRES_PASSWORD: wedding_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  api:
+    build:
+      context: .
+      dockerfile: WeddingGallery.Api/Dockerfile
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=db;Database=wedding_gallery;Username=wedding_user;Password=wedding_password
+      - ASPNETCORE_ENVIRONMENT=Development
+    ports:
+      - "5000:8080"
+    volumes:
+      - photo_storage:/app/photos
+    depends_on:
+      - db
+
+  web:
+    build:
+      context: ./ClientApp
+      dockerfile: Dockerfile
+    ports:
+      - "4200:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  photo_storage:
