@@ -21,7 +21,12 @@ namespace WeddingGallery.Application.Services
 
         public async Task<Photo> UploadPhotoAsync(Guid eventId, string uploaderName, string fileName, Stream fileStream)
         {
-            var uniqueFileName = $"{Guid.NewGuid()}_{fileName}";
+            // fileName comes straight from IFormFile.FileName, which is attacker-controlled and can
+            // contain path separators or ".." segments. Path.GetFileName strips any directory portion
+            // so the stored file can never escape _uploadPath, while the original name is still kept
+            // as the display name (Photo.FileName) shown to users.
+            var safeFileName = Path.GetFileName(fileName);
+            var uniqueFileName = $"{Guid.NewGuid()}_{safeFileName}";
             var filePath = Path.Combine(_uploadPath, uniqueFileName);
 
             using (var fileStreamOutput = new FileStream(filePath, FileMode.Create))
@@ -47,7 +52,10 @@ namespace WeddingGallery.Application.Services
             var uploadedPhotos = new List<Photo>();
             foreach (var file in files)
             {
-                var uniqueFileName = $"{Guid.NewGuid()}_{file.fileName}";
+                // Same path-traversal concern as UploadPhotoAsync: sanitize the client-supplied
+                // name before it becomes part of the on-disk path, but keep the original for display.
+                var safeFileName = Path.GetFileName(file.fileName);
+                var uniqueFileName = $"{Guid.NewGuid()}_{safeFileName}";
                 var filePath = Path.Combine(_uploadPath, uniqueFileName);
 
                 using (var fileStreamOutput = new FileStream(filePath, FileMode.Create))
