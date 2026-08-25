@@ -92,6 +92,30 @@ public class PhotoServiceTests : IDisposable
         Assert.Empty(Directory.GetFiles(_uploadRoot));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Falls_back_to_a_generic_name_when_the_guest_leaves_it_blank(string uploaderName)
+    {
+        // The name field is optional, so uploads must still carry a label the gallery, the
+        // admin grid and the ZIP entry names can all render.
+        var service = CreateService(new FakeThumbnailGenerator(succeed: true));
+
+        var photo = await service.UploadPhotoAsync(Guid.NewGuid(), uploaderName, File("kiss.jpg"));
+
+        Assert.Equal(PhotoService.AnonymousUploaderName, photo.UploaderName);
+    }
+
+    [Fact]
+    public async Task Trims_a_supplied_name()
+    {
+        var service = CreateService(new FakeThumbnailGenerator(succeed: true));
+
+        var photo = await service.UploadPhotoAsync(Guid.NewGuid(), "  Ania  ", File("kiss.jpg"));
+
+        Assert.Equal("Ania", photo.UploaderName);
+    }
+
     [Fact]
     public async Task Deleting_a_video_also_removes_its_thumbnail_file()
     {

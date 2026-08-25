@@ -9,6 +9,13 @@ namespace WeddingGallery.Application.Services
 {
     public class PhotoService : IPhotoService
     {
+        /// <summary>
+        /// Stand-in for guests who upload without naming themselves. Normalising here rather
+        /// than at each display site keeps the gallery, the admin grid and the ZIP entry names
+        /// working off one value instead of three separate fallbacks.
+        /// </summary>
+        public const string AnonymousUploaderName = "Gość";
+
         private readonly IPhotoRepository _photoRepository;
         private readonly IMediaFileValidator _validator;
         private readonly IThumbnailGenerator _thumbnailGenerator;
@@ -31,13 +38,13 @@ namespace WeddingGallery.Application.Services
             }
         }
 
-        public async Task<Photo> UploadPhotoAsync(Guid eventId, string uploaderName, UploadedFile file)
+        public async Task<Photo> UploadPhotoAsync(Guid eventId, string? uploaderName, UploadedFile file)
         {
             var mediaType = ValidateOrThrow(file);
             return await SaveAsync(eventId, uploaderName, file, mediaType);
         }
 
-        public async Task<IEnumerable<Photo>> UploadPhotosAsync(Guid eventId, string uploaderName, IEnumerable<UploadedFile> files)
+        public async Task<IEnumerable<Photo>> UploadPhotosAsync(Guid eventId, string? uploaderName, IEnumerable<UploadedFile> files)
         {
             // Validate the whole batch up front: validation only needs the name and size, so
             // rejecting late - after some files are already on disk and in the database - would
@@ -97,6 +104,11 @@ namespace WeddingGallery.Application.Services
             await _photoRepository.DeleteAsync(photo);
         }
 
+        // The name field is optional in the picker, and it arrives with whatever whitespace the
+        // phone keyboard added.
+        private static string NormaliseUploaderName(string? uploaderName) =>
+            string.IsNullOrWhiteSpace(uploaderName) ? AnonymousUploaderName : uploaderName.Trim();
+
         private string ValidateOrThrow(UploadedFile file)
         {
             var result = _validator.Validate(file.FileName, file.SizeInBytes);
@@ -108,7 +120,7 @@ namespace WeddingGallery.Application.Services
             return result.MediaType!;
         }
 
-        private async Task<Photo> SaveAsync(Guid eventId, string uploaderName, UploadedFile file, string mediaType)
+        private async Task<Photo> SaveAsync(Guid eventId, string? uploaderName, UploadedFile file, string mediaType)
         {
             // file.FileName comes straight from IFormFile.FileName, which is attacker-controlled
             // and can contain path separators or ".." segments. Path.GetFileName strips any
@@ -127,12 +139,12 @@ namespace WeddingGallery.Application.Services
             {
                 EventId = eventId,
                 FileName = file.FileName,
+                UploaderName = NormaliseUploaderName(uploaderName),
                 OriginalPath = $"/photos/{uniqueFileName}",
                 ThumbPath = mediaType == MediaTypes.Video
                     ? await GenerateVideoThumbnailAsync(uniqueFileName, filePath)
                     : $"/photos/{uniqueFileName}", // Images are served at full size; no separate thumb yet.
                 MediaType = mediaType,
-                UploaderName = uploaderName,
                 CreatedAt = DateTime.UtcNow
             };
 

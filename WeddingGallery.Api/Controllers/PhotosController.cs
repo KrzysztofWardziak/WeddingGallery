@@ -43,7 +43,9 @@ namespace WeddingGallery.Api.Controllers
         }
 
         [HttpPost("upload")]
-        public async Task<IActionResult> UploadPhotos([FromForm] Guid eventId, [FromForm] string uploaderName, List<IFormFile> files)
+        // uploaderName is optional: guests may contribute without naming themselves, and
+        // PhotoService substitutes a stand-in when it is blank.
+        public async Task<IActionResult> UploadPhotos([FromForm] Guid eventId, [FromForm] string? uploaderName, List<IFormFile> files)
         {
             if (files == null || files.Count == 0)
                 return BadRequest("No files uploaded");
