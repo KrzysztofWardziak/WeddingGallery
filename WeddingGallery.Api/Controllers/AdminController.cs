@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using WeddingGallery.Application.Interfaces;
+using WeddingGallery.Domain;
 
 namespace WeddingGallery.Api.Controllers
 {
@@ -48,6 +49,37 @@ namespace WeddingGallery.Api.Controllers
                 accessToken = newEvent.AccessToken
             });
         }
+
+        // Backs the admin event list. Admin-only: the response pairs every event name with
+        // its slug, which is the guest URL for that gallery.
+        [HttpGet("events")]
+        public async Task<IActionResult> GetEvents()
+        {
+            if (!ValidateToken()) return Unauthorized();
+
+            var summaries = await _eventService.GetEventSummariesAsync();
+            return Ok(summaries.Select(ToResponse));
+        }
+
+        [HttpGet("events/{id}")]
+        public async Task<IActionResult> GetEvent(Guid id)
+        {
+            if (!ValidateToken()) return Unauthorized();
+
+            var summary = await _eventService.GetEventSummaryAsync(id);
+            if (summary is null) return NotFound();
+
+            return Ok(ToResponse(summary));
+        }
+
+        private static object ToResponse(EventSummary summary) => new
+        {
+            id = summary.Id,
+            name = summary.Name,
+            slug = summary.Slug,
+            photoCount = summary.PhotoCount,
+            videoCount = summary.VideoCount
+        };
 
         [HttpDelete("photos/{id}")]
         public async Task<IActionResult> DeletePhoto(Guid id)

@@ -25,13 +25,10 @@ export class AdminLoginComponent {
       next: (res: any) => {
         localStorage.setItem('admin_token', res.token);
         this.isLoading = false;
-        
-        // If they already created an event, go to dashboard, else go to setup
-        if (localStorage.getItem('admin_event_id')) {
-          this.router.navigate(['/admin']);
-        } else {
-          this.router.navigate(['/admin/setup']);
-        }
+
+        // Always the event list: it is the only screen that works whether the admin has
+        // zero, one, or a dozen events.
+        this.router.navigate(['/admin/events']);
       },
       error: () => {
         this.error = 'Nieprawidłowe hasło';

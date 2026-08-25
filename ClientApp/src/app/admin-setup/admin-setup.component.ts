@@ -15,22 +15,15 @@ export class AdminSetupComponent {
   eventName = '';
   isLoading = false;
 
-  constructor(private apiService: ApiService, private router: Router) {
-    if (localStorage.getItem('admin_event_id')) {
-      this.router.navigate(['/admin']);
-    }
-  }
+  // No redirect when an event already exists: bouncing the admin away from this form was
+  // what made a second event impossible to create.
+  constructor(private apiService: ApiService, private router: Router) {}
 
   createEvent() {
     if (!this.eventName) return;
     this.isLoading = true;
     this.apiService.createEvent(this.eventName).subscribe({
-      next: (res) => {
-        localStorage.setItem('admin_event_id', res.id);
-        localStorage.setItem('admin_event_slug', res.slug);
-        localStorage.setItem('admin_event_name', res.name);
-        this.router.navigate(['/admin']);
-      },
+      next: (res) => this.router.navigate(['/admin/events', res.id]),
       error: (err) => {
         console.error(err);
         this.isLoading = false;

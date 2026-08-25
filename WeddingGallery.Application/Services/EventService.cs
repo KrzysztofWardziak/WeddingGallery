@@ -1,4 +1,5 @@
 using WeddingGallery.Application.Interfaces;
+using WeddingGallery.Domain;
 using WeddingGallery.Domain.Entities;
 using WeddingGallery.Domain.Interfaces;
 
@@ -28,6 +29,16 @@ namespace WeddingGallery.Application.Services
         public async Task<Event?> GetEventBySlugAsync(string slug)
         {
             return await _eventRepository.GetBySlugAsync(slug);
+        }
+
+        public async Task<IReadOnlyList<EventSummary>> GetEventSummariesAsync()
+        {
+            return await _eventRepository.GetSummariesAsync();
+        }
+
+        public async Task<EventSummary?> GetEventSummaryAsync(Guid id)
+        {
+            return await _eventRepository.GetSummaryByIdAsync(id);
         }
     }
 }

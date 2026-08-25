@@ -14,6 +14,14 @@ FROM build AS publish
 RUN dotnet publish "WeddingGallery.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+
+# FfmpegThumbnailGenerator shells out to ffmpeg to pull a poster frame out of uploaded
+# videos. --no-install-recommends keeps this to the codecs we need rather than pulling in
+# the whole multimedia stack.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 EXPOSE 8080
 COPY --from=publish /app/publish .

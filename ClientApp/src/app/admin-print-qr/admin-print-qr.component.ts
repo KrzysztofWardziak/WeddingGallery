@@ -1,7 +1,8 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { QRCodeModule } from 'angularx-qrcode';
+import { ApiService } from '../services/api.service';
 
 @Component({
   selector: 'app-admin-print-qr',
@@ -14,20 +15,32 @@ export class AdminPrintQrComponent implements OnInit {
   eventName = '';
   eventUrl = '';
 
-  constructor(private router: Router) {}
+  private eventId = '';
+
+  constructor(
+    private apiService: ApiService,
+    private router: Router,
+    private route: ActivatedRoute
+  ) {}
 
   ngOnInit() {
-    const eventId = localStorage.getItem('admin_event_id');
-    const slug = localStorage.getItem('admin_event_slug');
-    const name = localStorage.getItem('admin_event_name');
+    this.eventId = this.route.snapshot.paramMap.get('id') || '';
 
-    if (!eventId || !slug) {
-      this.router.navigate(['/admin']);
+    if (!this.eventId) {
+      this.router.navigate(['/admin/events']);
       return;
     }
 
-    this.eventName = name || 'Nasze Wesele';
-    this.eventUrl = `${window.location.origin}/${slug}`;
+    this.apiService.getAdminEvent(this.eventId).subscribe({
+      next: (event) => {
+        this.eventName = event.name;
+        this.eventUrl = `${window.location.origin}/${event.slug}`;
+      },
+      error: (err) => {
+        console.error(err);
+        this.router.navigate(['/admin/events']);
+      }
+    });
   }
 
   print() {
@@ -35,6 +48,6 @@ export class AdminPrintQrComponent implements OnInit {
   }
 
   goBack() {
-    this.router.navigate(['/admin']);
+    this.router.navigate(['/admin/events', this.eventId]);
   }
 }

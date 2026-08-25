@@ -1,14 +1,19 @@
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using WeddingGallery.Application.Interfaces;
+using WeddingGallery.Application.Media;
 using WeddingGallery.Application.Services;
 using WeddingGallery.Domain.Interfaces;
 using WeddingGallery.Infrastructure.Data;
+using WeddingGallery.Infrastructure.Media;
 using WeddingGallery.Infrastructure.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Guests upload several full-size phone photos in one request; Kestrel's 30 MB default is too low.
+// Guests upload full-size phone photos and short videos; Kestrel's 30 MB default is too low.
+// The per-file ceiling that actually matters is MediaFileValidator.MaxFileBytes, which is set
+// by Cloudflare's 100 MB request limit on the free plan.
 const long MaxUploadBytes = 200L * 1024 * 1024;
 
 builder.WebHost.ConfigureKestrel(options =>
@@ -33,6 +38,13 @@ builder.Services.AddScoped<IEventRepository, EventRepository>();
 builder.Services.AddScoped<IPhotoRepository, PhotoRepository>();
 builder.Services.AddScoped<IEventService, EventService>();
 builder.Services.AddScoped<IPhotoService, PhotoService>();
+builder.Services.AddSingleton<IMediaFileValidator, MediaFileValidator>();
+builder.Services.AddSingleton<IThumbnailGenerator, FfmpegThumbnailGenerator>();
+
+// Must match the wwwroot/photos path that UseStaticFiles serves and that docker-compose
+// mounts the data volume onto.
+builder.Services.AddSingleton(new PhotoStorageOptions(
+    Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "photos")));
 
 // In production the SPA is served from the same origin, so the list is empty and no CORS
 // headers are emitted at all. Development keeps ng serve on localhost:4200.
@@ -97,7 +109,16 @@ if (app.Environment.IsDevelopment())
 }
 
 // TLS is terminated by Caddy in front of this container, so no redirect here.
-app.UseStaticFiles(); // Serve photos
+
+// The built-in map covers .mp4 and .webm but not the formats iPhones actually produce, and an
+// unmapped extension is served without a Content-Type, which stops playback in the browser.
+var contentTypeProvider = new FileExtensionContentTypeProvider();
+contentTypeProvider.Mappings[".mov"] = "video/quicktime";
+contentTypeProvider.Mappings[".m4v"] = "video/x-m4v";
+contentTypeProvider.Mappings[".heic"] = "image/heic";
+contentTypeProvider.Mappings[".heif"] = "image/heif";
+
+app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypeProvider }); // Serve photos and videos
 app.UseCors();
 app.UseAuthorization();
 app.MapControllers();

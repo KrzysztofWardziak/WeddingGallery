@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using WeddingGallery.Infrastructure.Data;
@@ -11,9 +12,11 @@ using WeddingGallery.Infrastructure.Data;
 namespace WeddingGallery.Infrastructure.Migrations
 {
     [DbContext(typeof(WeddingGalleryDbContext))]
-    partial class WeddingGalleryDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260825144058_AddMediaType")]
+    partial class AddMediaType
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
