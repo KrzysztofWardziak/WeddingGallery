@@ -158,13 +158,22 @@ Przejdź po kolei przez poniższe punkty:
   docker compose restart api
   ```
 
-- [ ] Swagger jest niedostępny publicznie:
+- [ ] Swagger jest niedostępny publicznie. Wejście na `https://kasiaikrzys.pl/swagger`
+      w przeglądarce zwróci `200` i pokaże aplikację Angular, a nie błąd 404 — to
+      oczekiwane zachowanie, bo `Caddyfile` przekierowuje na `api:8080` wyłącznie
+      ścieżki `/api/*` i `/photos/*`; wszystko inne, w tym `/swagger`, trafia do
+      catch-allu `handle { reverse_proxy web:80 }`, a fallback SPA w
+      `ClientApp/nginx.conf` (`try_files $uri $uri/ /index.html`) zwraca
+      `index.html` dla każdej nieznanej ścieżki. Adres `/swagger` nigdy nie jest
+      więc przekazywany do API — sprawdź zamiast tego bezpośrednio, że kontener
+      `api` działa w środowisku Production, w którym `Program.cs` w ogóle nie
+      rejestruje Swaggera:
 
   ```bash
-  curl -o /dev/null -s -w "%{http_code}\n" https://kasiaikrzys.pl/swagger
+  docker compose exec api printenv ASPNETCORE_ENVIRONMENT
   ```
 
-  Oczekiwany wynik: `404` (Swagger jest włączony wyłącznie w środowisku Development).
+  Oczekiwany wynik: `Production`.
 
 - [ ] Baza danych nie odpowiada z zewnątrz — z innego komputera w sieci lokalnej:
 
@@ -191,25 +200,50 @@ W logach `api` powinien pojawić się wpis `Database migrations applied.`.
 
 ## 7. Kopie zapasowe
 
-Baza danych (zrzut skompresowany gzip):
+Baza danych (zrzut skompresowany gzip). Zmienne `$POSTGRES_USER`/`$POSTGRES_DB`
+rozwijają się w powłoce, w której uruchamiasz komendę — nie wewnątrz kontenera —
+więc najpierw wczytaj je z pliku `.env`, inaczej polecenie wykona się jako
+`pg_dump -U "" ""`:
 
 ```bash
+cd /srv/wedding/app
+set -a && . ./.env && set +a
 mkdir -p /srv/wedding/backup
 docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip > /srv/wedding/backup/db-$(date +%F).sql.gz
 ```
 
-Zdjęcia (kopia przyrostowa na zewnętrzny cel, np. dysk sieciowy lub inny host):
+Zdjęcia (kopia przyrostowa na zewnętrzny cel, np. dysk sieciowy lub inny host —
+`<adres-hosta-backupu>` i `<ścieżka-docelowa>` poniżej to placeholdery, zastąp je
+prawdziwym celem backupu przed użyciem):
 
 ```bash
-rsync -a /srv/wedding/photos/ kris@backup-host:/mnt/backup/wedding/photos/
+rsync -a /srv/wedding/photos/ kris@<adres-hosta-backupu>:<ścieżka-docelowa>/
 ```
+
+Backup zdjęć działa bez hasła (jest uruchamiany automatycznie z crona), więc
+wymaga wcześniejszego skonfigurowania logowania kluczem SSH bez hasła na hoście
+docelowym:
+
+```bash
+ssh-keygen -t ed25519 -C "wedding-gallery-backup" -f ~/.ssh/wedding_gallery_backup -N ""
+ssh-copy-id -i ~/.ssh/wedding_gallery_backup.pub kris@<adres-hosta-backupu>
+cat <<'EOF' >> ~/.ssh/config
+Host backup-host
+    HostName <adres-hosta-backupu>
+    User kris
+    IdentityFile ~/.ssh/wedding_gallery_backup
+EOF
+```
+
+Po skonfigurowaniu aliasu `backup-host` w `~/.ssh/config` powyższą komendę `rsync`
+można wywoływać jako `rsync -a /srv/wedding/photos/ backup-host:<ścieżka-docelowa>/`.
 
 Automatyzacja — codziennie o 3:00 (edytuj `crontab -e` jako użytkownik `kris`;
 zmienne `POSTGRES_USER`/`POSTGRES_DB` muszą być dostępne w środowisku crona, więc
 najprościej odczytać je bezpośrednio z pliku `.env`):
 
 ```
-0 3 * * * cd /srv/wedding/app && set -a && . ./.env && set +a && docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip > /srv/wedding/backup/db-$(date +\%F).sql.gz && rsync -a /srv/wedding/photos/ kris@backup-host:/mnt/backup/wedding/photos/
+0 3 * * * cd /srv/wedding/app && set -a && . ./.env && set +a && docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip > /srv/wedding/backup/db-$(date +\%F).sql.gz && rsync -a /srv/wedding/photos/ backup-host:<ścieżka-docelowa>/
 ```
 
 **Ważne — dysk `scsi1` jest wyłączony z backupu VM w Proxmoksie.** Katalog
@@ -274,6 +308,23 @@ zaraz po starcie):
   (`MaxRequestBodySize` w Kestrelu i `MultipartBodyLengthLimit` w `Program.cs`).
   Błąd 413 oznacza, że przesyłane łącznie w jednym żądaniu zdjęcia przekraczają
   ten limit — poproś gościa o przesłanie mniejszej liczby zdjęć naraz.
+
+**Nocny backup nie produkuje żadnego pliku (brak nowego `db-<data>.sql.gz` albo
+zdjęcia nie przybywają na hoście docelowym):**
+- Sprawdź, czy zadanie crona w ogóle się wykonało: `grep CRON /var/log/syslog`
+  (albo `journalctl -u cron`) na wpisy z godziny 3:00.
+- Najczęstsza przyczyna: brak skonfigurowanego logowania kluczem SSH bez hasła
+  do hosta docelowego (`backup-host`) — `rsync` uruchomiony z crona nie ma
+  terminala, więc każde pytanie o hasło kończy się cichym błędem. Sprawdź
+  ręcznie: `ssh backup-host true` powinno zakończyć się bez pytania o hasło; jeśli
+  pyta, wróć do konfiguracji klucza w sekcji 7.
+- Druga częsta przyczyna: brak miejsca na dysku docelowym (`rsync` kończy się
+  błędem `No space left on device`) — sprawdź `df -h` na hoście docelowym i na
+  `/srv/wedding/backup` lokalnie.
+- Sprawdź też, czy plik `.env` nadal istnieje i ma poprawne uprawnienia
+  (`chmod 600 .env` z sekcji 3) — jeśli został przypadkowo usunięty lub
+  przeniesiony, `set -a && . ./.env && set +a` w zadaniu crona zakończy się
+  błędem i `pg_dump` uruchomi się z pustymi poświadczeniami.
 
 ## 9. Znane ograniczenia
 
