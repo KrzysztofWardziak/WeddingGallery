@@ -3,7 +3,7 @@ import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { from, of } from 'rxjs';
-import { catchError, finalize, map, mergeMap, tap } from 'rxjs/operators';
+import { catchError, finalize, map, mergeMap, tap, timeout } from 'rxjs/operators';
 import { ApiService } from '../services/api.service';
 
 interface SelectedPhoto {
@@ -15,6 +15,11 @@ interface SelectedPhoto {
 // Guests are on venue wifi or LTE, where dozens of parallel connections lower
 // real throughput and cause timeouts. Three at a time is the compromise.
 const MAX_PARALLEL_UPLOADS = 3;
+
+// A stalled request on venue wifi must not trap the guest with a frozen
+// progress bar and no way out; a hang becomes a normal failure that the
+// existing retry path already handles.
+const UPLOAD_TIMEOUT_MS = 60000;
 
 @Component({
   selector: 'app-image-picker',
@@ -29,7 +34,8 @@ export class ImagePickerComponent implements OnDestroy {
   photos: SelectedPhoto[] = [];
   eventId = localStorage.getItem('guest_event_id') || '';
   isUploading = false;
-  uploadedCount = 0;
+  attemptedCount = 0;
+  savedCount = 0;
   totalCount = 0;
   failedCount = 0;
 
@@ -77,7 +83,8 @@ export class ImagePickerComponent implements OnDestroy {
 
     const queue = this.photos.filter(photo => !this.succeeded.has(photo));
     this.isUploading = true;
-    this.uploadedCount = 0;
+    this.attemptedCount = 0;
+    this.savedCount = 0;
     this.failedCount = 0;
     this.totalCount = queue.length;
     queue.forEach(photo => (photo.failed = false));
@@ -85,6 +92,7 @@ export class ImagePickerComponent implements OnDestroy {
     from(queue).pipe(
       mergeMap(photo =>
         this.apiService.uploadPhoto(this.eventId, this.guestName, photo.file).pipe(
+          timeout(UPLOAD_TIMEOUT_MS),
           map(() => ({ photo, ok: true })),
           // One failed photo must not abort the rest; collect it for a retry.
           catchError(() => of({ photo, ok: false }))
@@ -92,8 +100,11 @@ export class ImagePickerComponent implements OnDestroy {
         MAX_PARALLEL_UPLOADS
       ),
       tap(result => {
-        this.uploadedCount++;
+        // The bar advances on every completed attempt (honest progress), but the
+        // number shown to the guest must only count photos actually saved.
+        this.attemptedCount++;
         if (result.ok) {
+          this.savedCount++;
           this.succeeded.add(result.photo);
         } else {
           result.photo.failed = true;

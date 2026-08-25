@@ -43,10 +43,10 @@
     <div *ngIf="isUploading" class="space-y-2">
       <div class="h-1 bg-navy-blue/10 rounded-full overflow-hidden">
         <div class="h-full bg-eucalyptus transition-all duration-300"
-             [style.width.%]="totalCount ? (uploadedCount / totalCount) * 100 : 0"></div>
+             [style.width.%]="totalCount ? (attemptedCount / totalCount) * 100 : 0"></div>
       </div>
       <p class="text-center text-sm text-navy-blue/70 font-light">
-        Zapisujemy Twoje chwile… {{ uploadedCount }} z {{ totalCount }}
+        Zapisujemy Twoje chwile… {{ savedCount }} z {{ totalCount }}
       </p>
     </div>
 
