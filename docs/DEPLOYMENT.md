@@ -145,6 +145,11 @@ Do testów lokalnych na własnej maszynie deweloperskiej wystarczy uruchomić
 wszystko bez kontenera `cloudflared` (np. `docker compose up -d db api web caddy`)
 — nie ma już potrzeby podmieniać `DOMAIN` na `localhost`.
 
+**Uwaga przy diagnozowaniu konfiguracji.** `docker compose config` wypisuje
+rozwiniętą konfigurację ze wszystkimi zmiennymi z `.env`, w tym hasłami,
+`ADMIN_TOKEN` i `CLOUDFLARE_TUNNEL_TOKEN` w jawnej postaci. Nie wklejaj jego
+wyjścia nigdzie (issue, czat, log) — to równoważne wklejeniu całego pliku `.env`.
+
 ## 4. Pierwsze uruchomienie
 
 ```bash
@@ -177,6 +182,18 @@ przeglądarką gościa a Cloudflare obsługuje sama Cloudflare; odcinek między
 `cloudflared` a `caddy` biegnie już przez tunel, więc `caddy` nasłuchuje zwykłym
 `http://` (patrz `Caddyfile`).
 
+Włącz też **Always Use HTTPS** (panel Cloudflare, **SSL/TLS → Edge
+Certificates**). Przekierowanie na HTTPS zdefiniowane w `Caddyfile` obejmuje
+wyłącznie hosta `www` — bez tej opcji gość, który wpisze
+`http://kasiaikrzys.pl` bez `https://`, zostałby obsłużony przez zwykły
+protokół HTTP zamiast zostać przekierowanym.
+
+Gdy tunel już działa i strona jest dostępna pod `https://kasiaikrzys.pl`, usuń
+z routera domowego reguły przekierowania portów `wedding-http` i
+`wedding-https` (zewnętrzne porty `9909` i `9920` z sekcji 1) — są to jedyne
+pozostałości starej konfiguracji sprzed przejścia na tunel i nic już z nich nie
+korzysta.
+
 ## 5. Lista kontrolna po wdrożeniu
 
 Przejdź po kolei przez poniższe punkty:
@@ -192,7 +209,11 @@ Przejdź po kolei przez poniższe punkty:
       `image-picker.component.ts`).
 - [ ] Zachowanie po rozłączeniu Wi-Fi w trakcie wysyłki: część zdjęć zostaje
       oznaczona jako nieudana, a przycisk ponowienia wysyła tylko te
-      nieudane, nie całą partię od nowa.
+      nieudane, nie całą partię od nowa. Uwaga: ten test może wyprodukować
+      duplikaty zdjęć — jeśli żądanie dotarło do API, ale odpowiedź zginęła
+      po drodze (typowe przy zrywanym Wi-Fi), klient uznaje wysyłkę za nieudaną
+      i wyśle to samo zdjęcie ponownie. Endpoint nie ma klucza idempotencji, więc
+      ewentualne duplikaty administrator usuwa ręcznie z panelu.
 - [ ] Odświeżenie strony bezpośrednio pod adresem `https://kasiaikrzys.pl/<slug>`
       (bez przechodzenia przez stronę główną) nie zwraca błędu 404.
 - [ ] Po `docker compose restart api` przesłane wcześniej zdjęcia nadal są widoczne
@@ -364,6 +385,16 @@ zaraz po starcie):
 - Sprawdź uprawnienia katalogu `/srv/wedding/photos` na hoście — kontener musi
   mieć prawo zapisu.
 
+**Usunięte zdjęcie nadal jest dostępne pod bezpośrednim adresem URL:**
+- Usunięcie zdjęcia w panelu administracyjnym kasuje wiersz w bazie i plik na
+  dysku, ale kopia mogła zostać zbuforowana na brzegu sieci Cloudflare. Adres
+  `https://kasiaikrzys.pl/photos/<guid>.jpg` może więc pozostać osiągalny przez
+  do pięciu minut po usunięciu (`Cache-Control: public, max-age=300` ustawione
+  w `Caddyfile` dla ścieżki `/photos/*`). Jeśli potrzebne jest natychmiastowe
+  usunięcie z brzegu sieci, wyczyść cache ręcznie w panelu Cloudflare:
+  **Caching → Configuration → Purge Everything**, albo wyczyść tylko ten jeden
+  adres (**Custom Purge → Purge by URL**).
+
 **Część zdjęć nie dochodzi:**
 - Każde zdjęcie wysyłane jest osobnym żądaniem (patrz `image-picker.component.ts`
   i `api.service.ts`), więc problem dotyczy zwykle pojedynczego pliku, nie całej
@@ -407,6 +438,11 @@ zdjęcia nie przybywają na hoście docelowym):**
   po jednym pliku na żądanie (`image-picker.component.ts`, `api.service.ts`), a
   nie jedną wspólną partią — pojedyncze zdjęcie z telefonu nigdy nie zbliża się
   do tego limitu, ale cała partia dwudziestu zdjęć w jednym żądaniu mogłaby.
+- **Brak ograniczenia liczby prób logowania do panelu administracyjnego.**
+  `POST /api/Admin/login` jest publicznie dostępny i nie ma żadnego rate
+  limitingu w kodzie API — nic nie blokuje próby odgadnięcia `ADMIN_PASSWORD`
+  brute-force'em. Zalecana mitygacja to reguła rate-limitingu lub WAF w panelu
+  Cloudflare ograniczająca żądania do ścieżki `/api/Admin/*`.
 - **Brak generowania miniatur.** `PhotoService` zapisuje `ThumbPath` jako
   identyczną ścieżkę co `OriginalPath` (miniatura nie jest faktycznie
   generowana) — feed galerii pobiera więc zawsze pełnowymiarowe pliki zdjęć,

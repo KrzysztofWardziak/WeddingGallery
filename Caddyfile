@@ -13,6 +13,7 @@ http://{$DOMAIN} {
 	}
 
 	handle /photos/* {
+		header Cache-Control "public, max-age=300"
 		reverse_proxy api:8080
 	}
 
