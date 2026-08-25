@@ -4,6 +4,9 @@ Dokument opisuje pełne wdrożenie produkcyjne aplikacji Wedding Gallery na serw
 Ubuntu Server 24.04 LTS (Proxmox), pod domeną `kasiaikrzys.pl`. Wszystkie komendy są
 gotowe do wklejenia — wykonuj je w podanej kolejności.
 
+Ruch do serwera nie wchodzi przez przekierowanie portów na routerze, tylko przez
+**Cloudflare Tunnel** — patrz sekcja 1, dlaczego.
+
 ## 1. Wymagania wstępne
 
 - VM Ubuntu Server 24.04 LTS na Proxmoksie, adres w sieci lokalnej `192.168.1.41`,
@@ -27,15 +30,36 @@ gotowe do wklejenia — wykonuj je w podanej kolejności.
   docker compose version
   ```
 
-- Przekierowanie portów 80/443 z routera domowego na `192.168.1.41` (NAT).
-  Publiczny adres IP w chwili pisania tego dokumentu: `188.47.103.198` — to łącze
-  domowe, więc adres może się zmienić (patrz sekcja 9).
-- Domena `kasiaikrzys.pl` zarejestrowana w az.pl. Serwery nazw pozostają bez zmian:
-  `ns6.az.pl`, `ns7.az.pl`, `ns8.az.pl`. W panelu DNS ustawione są tylko rekordy A:
-  - `@` → aktualny publiczny adres IP,
-  - `www` → aktualny publiczny adres IP,
+- **Dlaczego tunel, a nie przekierowanie portów.** Łącze domowe, na którym stoi
+  serwer, działa w technologii DS-Lite (carrier-grade NAT operatora). Dwa niezależne
+  dowody, które to potwierdziły:
+  - `traceroute` z serwera pokazuje jako drugi przeskok adres `192.0.0.1` — pulę
+    zarezerwowaną przez RFC 6333 wyłącznie na łącze między urządzeniem abonenta a
+    bramą AFTR operatora.
+  - Router był w stanie wynegocjować na zewnątrz tylko porty `9909` i `9920` zamiast
+    żądanych `80` i `443`.
 
-  oba z TTL `600` sekund (niski TTL ułatwia szybką aktualizację po zmianie IP).
+  Let's Encrypt weryfikuje domenę wyłącznie na porcie 80 (HTTP-01) albo 443
+  (TLS-ALPN-01) — te numery są częścią protokołu ACME i nie da się ich zmienić —
+  więc żaden certyfikat nie mógł zostać wydany, a goście i tak nie dotarliby do
+  strony pod portem `9909`. Cloudflare Tunnel omija ten problem: połączenie
+  inicjuje kontener `cloudflared` z wnętrza sieci domowej w stronę Cloudflare, więc
+  żaden port nie musi być otwierany na routerze.
+
+- Konto Cloudflare (wystarczy plan darmowy) i domena `kasiaikrzys.pl` dodana do
+  tego konta.
+- Serwery nazw domeny podmienione w panelu az.pl na te wskazane przez Cloudflare
+  po dodaniu domeny (dwa unikalne adresy `*.ns.cloudflare.com`). **Rejestracja
+  domeny zostaje w az.pl** — zmienia się tylko to, kto obsługuje DNS.
+- Tunel utworzony w Cloudflare Zero Trust (**Networks → Tunnels → Create a
+  tunnel**, typ Cloudflared, dowolna nazwa np. `wedding-gallery`) i skopiowany
+  token instalacyjny — wartość po `--token` w poleceniu instalacyjnym pokazanym
+  przez kreator. Zapisz go, będzie potrzebny w sekcji 3.
+
+  **Zakładka Public Hostname nie jest jeszcze dostępna na tym etapie** — Cloudflare
+  odblokowuje ją dopiero, gdy jakiś konektor faktycznie zamelduje się z tym
+  tokenem. Publiczne nazwy hosta dodajemy dopiero w sekcji 4, po pierwszym
+  uruchomieniu.
 - Repozytorium klonowane po SSH przy użyciu read-only deploy key GitHub:
 
   ```bash
@@ -57,31 +81,19 @@ gotowe do wklejenia — wykonuj je w podanej kolejności.
 
 ## 2. Weryfikacja przed pierwszym uruchomieniem
 
-Zanim uruchomisz kontenery, upewnij się, że DNS i sieć są poprawnie skonfigurowane —
-Caddy nie wystawi certyfikatu Let's Encrypt, jeśli domena nie wskazuje na ten serwer.
+Zanim uruchomisz kontenery, upewnij się, że domena rzeczywiście korzysta z DNS
+Cloudflare — bez tego tunel nie będzie miał gdzie opublikować nazw hosta.
 
 ```bash
-nslookup kasiaikrzys.pl 1.1.1.1
+nslookup -type=NS kasiaikrzys.pl 1.1.1.1
 ```
 
-Oczekiwany wynik: adres zwrócony przez `nslookup` musi być identyczny z publicznym
-adresem IP serwera.
+Oczekiwany wynik: zwrócone serwery nazw kończą się na `.ns.cloudflare.com`.
 
-```bash
-curl -4 ifconfig.me
-```
-
-Uruchom na VM — wynik musi zgadzać się z adresem zwróconym przez `nslookup` powyżej.
-
-Na koniec sprawdź z zewnątrz sieci domowej (np. z telefonu w sieci komórkowej, po
-wyłączeniu Wi-Fi), że port 80 jest osiągalny:
-
-```bash
-curl -I http://kasiaikrzys.pl
-```
-
-Jeśli połączenie się nie nawiązuje — sprawdź przekierowanie portów na routerze i
-ewentualny firewall dostawcy internetu, zanim przejdziesz dalej.
+Dodatkowo w panelu Cloudflare (**Websites**) domena `kasiaikrzys.pl` musi mieć
+status **Active** — dopóki widnieje jako **Pending Nameservers**, propagacja
+zmiany serwerów nazw z az.pl jeszcze się nie zakończyła i trzeba poczekać (zwykle
+do kilku godzin, czasem do 24h).
 
 ## 3. Konfiguracja sekretów
 
@@ -98,12 +110,13 @@ openssl rand -base64 32   # ADMIN_PASSWORD
 openssl rand -base64 32   # ADMIN_TOKEN
 ```
 
-Wklej wygenerowane wartości do pliku `.env` (edytuj np. `nano .env`). Plik musi
+Wklej wygenerowane wartości do pliku `.env` (edytuj np. `nano .env`), a
+`CLOUDFLARE_TUNNEL_TOKEN` uzupełnij tokenem skopiowanym w sekcji 1. Plik musi
 zawierać co najmniej:
 
 ```
 DOMAIN=kasiaikrzys.pl
-ACME_EMAIL=krzysztof.wardziak@oke.pl
+CLOUDFLARE_TUNNEL_TOKEN=<token skopiowany w sekcji 1>
 POSTGRES_DB=wedding_gallery
 POSTGRES_USER=wedding_user
 POSTGRES_PASSWORD=<wygenerowane powyżej>
@@ -115,27 +128,27 @@ DATA_ROOT=/srv/wedding
 `ADMIN_PASSWORD` i `ADMIN_TOKEN` **nie mogą być puste** — API odmawia startu poza
 środowiskiem Development, jeśli te wartości są puste (patrz sekcja 8).
 
+**`CLOUDFLARE_TUNNEL_TOKEN` ma siłę hasła.** Kto go posiada, może uruchomić
+własny konektor podszywający się pod ten tunel i przejąć ruch do serwera.
+Traktuj go jak każdy inny sekret w tym pliku. Jeśli token wycieknie (np.
+trafi do repozytorium albo na zrzut ekranu), Cloudflare nie oferuje jego
+rotacji w miejscu — jedynym wyjściem jest usunięcie tunelu w Zero Trust i
+utworzenie nowego (co oznacza też ponowne dodanie obu nazw hosta z sekcji 4).
+
 Zablokuj dostęp do pliku dla innych użytkowników:
 
 ```bash
 chmod 600 .env
 ```
 
-### Testowanie lokalne — nie używaj prawdziwej domeny
+Do testów lokalnych na własnej maszynie deweloperskiej wystarczy uruchomić
+wszystko bez kontenera `cloudflared` (np. `docker compose up -d db api web caddy`)
+— nie ma już potrzeby podmieniać `DOMAIN` na `localhost`.
 
-**Zanim uruchomisz `docker compose up` na swojej maszynie deweloperskiej**, ustaw w
-lokalnym `.env`:
-
-```
-DOMAIN=localhost
-```
-
-`.env.example` domyślnie zawiera `DOMAIN=kasiaikrzys.pl`. Jeśli zostawisz tę wartość
-podczas lokalnych testów, Caddy spróbuje wystawić prawdziwy certyfikat Let's Encrypt
-dla `kasiaikrzys.pl` — domeny, która nie wskazuje na Twoją maszynę — co i tak się nie
-uda, a każda taka próba zużywa limit pięciu certyfikatów tygodniowo opisany w sekcji 7.
-Przy `DOMAIN=localhost` Caddy automatycznie używa wewnętrznego, samopodpisanego CA
-zamiast Let's Encrypt, więc lokalne testy nie dotykają produkcyjnego limitu ACME.
+**Uwaga przy diagnozowaniu konfiguracji.** `docker compose config` wypisuje
+rozwiniętą konfigurację ze wszystkimi zmiennymi z `.env`, w tym hasłami,
+`ADMIN_TOKEN` i `CLOUDFLARE_TUNNEL_TOKEN` w jawnej postaci. Nie wklejaj jego
+wyjścia nigdzie (issue, czat, log) — to równoważne wklejeniu całego pliku `.env`.
 
 ## 4. Pierwsze uruchomienie
 
@@ -144,27 +157,63 @@ cd /srv/wedding/app
 docker compose up -d --build
 ```
 
-Śledź logi kontenera Caddy, aż pojawi się wpis o pomyślnym wydaniu certyfikatu
-(szukaj `certificate obtained successfully` lub `obtain certificate` w logach):
+Śledź logi kontenera `cloudflared`, aż pojawi się wpis o zarejestrowanym
+połączeniu (szukaj `Registered tunnel connection`):
 
 ```bash
-docker compose logs -f caddy
+docker compose logs -f cloudflared
 ```
 
 Przerwij podgląd logów kombinacją `Ctrl+C` po potwierdzeniu wpisu — kontenery
-pozostają uruchomione w tle.
+pozostają uruchomione w tle. Potwierdź też w panelu Cloudflare Zero Trust
+(**Networks → Tunnels**), że tunel ma status **Healthy**.
+
+**Dopiero teraz** zakładka **Public Hostname** tunelu staje się dostępna. Dodaj w
+niej dwie nazwy hosta:
+
+| Publiczna nazwa hosta       | Typ usługi | Adres URL usługi |
+|------------------------------|------------|-------------------|
+| `kasiaikrzys.pl`             | HTTP       | `caddy:80`        |
+| `www.kasiaikrzys.pl`         | HTTP       | `caddy:80`        |
+
+Obie wskazują na kontener `caddy` po nazwie usługi z `docker-compose.yml` — działa
+to, bo `cloudflared` i `caddy` są w tej samej sieci Dockera. TLS między
+przeglądarką gościa a Cloudflare obsługuje sama Cloudflare; odcinek między
+`cloudflared` a `caddy` biegnie już przez tunel, więc `caddy` nasłuchuje zwykłym
+`http://` (patrz `Caddyfile`).
+
+Włącz też **Always Use HTTPS** (panel Cloudflare, **SSL/TLS → Edge
+Certificates**). Przekierowanie na HTTPS zdefiniowane w `Caddyfile` obejmuje
+wyłącznie hosta `www` — bez tej opcji gość, który wpisze
+`http://kasiaikrzys.pl` bez `https://`, zostałby obsłużony przez zwykły
+protokół HTTP zamiast zostać przekierowanym.
+
+Gdy tunel już działa i strona jest dostępna pod `https://kasiaikrzys.pl`, usuń
+z routera domowego reguły przekierowania portów `wedding-http` i
+`wedding-https` (zewnętrzne porty `9909` i `9920` z sekcji 1) — są to jedyne
+pozostałości starej konfiguracji sprzed przejścia na tunel i nic już z nich nie
+korzysta.
 
 ## 5. Lista kontrolna po wdrożeniu
 
 Przejdź po kolei przez poniższe punkty:
 
 - [ ] Strona `https://kasiaikrzys.pl` wczytuje się poprawnie (bez ostrzeżeń
-      certyfikatu).
+      certyfikatu — certyfikat wystawia i utrzymuje Cloudflare, nie Caddy).
 - [ ] `https://www.kasiaikrzys.pl` przekierowuje na `https://kasiaikrzys.pl`.
 - [ ] W panelu administracyjnym udało się założyć nowe wydarzenie.
 - [ ] Wydrukowany kod QR wydarzenia otwiera poprawną stronę galerii.
-- [ ] Upload kilku zdjęć naraz z telefonu (aparat, zdjęcia o pełnej rozdzielczości)
-      kończy się sukcesem.
+- [ ] Wysyłka dwudziestu zdjęć naraz z telefonu (aparat, zdjęcia o pełnej
+      rozdzielczości) kończy się sukcesem, z licznikiem postępu widocznym w
+      trakcie wysyłki (zdjęcia idą pojedynczo, po trzy równolegle — patrz
+      `image-picker.component.ts`).
+- [ ] Zachowanie po rozłączeniu Wi-Fi w trakcie wysyłki: część zdjęć zostaje
+      oznaczona jako nieudana, a przycisk ponowienia wysyła tylko te
+      nieudane, nie całą partię od nowa. Uwaga: ten test może wyprodukować
+      duplikaty zdjęć — jeśli żądanie dotarło do API, ale odpowiedź zginęła
+      po drodze (typowe przy zrywanym Wi-Fi), klient uznaje wysyłkę za nieudaną
+      i wyśle to samo zdjęcie ponownie. Endpoint nie ma klucza idempotencji, więc
+      ewentualne duplikaty administrator usuwa ręcznie z panelu.
 - [ ] Odświeżenie strony bezpośrednio pod adresem `https://kasiaikrzys.pl/<slug>`
       (bez przechodzenia przez stronę główną) nie zwraca błędu 404.
 - [ ] Po `docker compose restart api` przesłane wcześniej zdjęcia nadal są widoczne
@@ -197,9 +246,18 @@ Przejdź po kolei przez poniższe punkty:
   nc -zv -w 3 192.168.1.41 5432
   ```
 
-  Oczekiwane: połączenie odrzucone / timeout. Tylko kontener `caddy` publikuje
-  porty na hosta (80/443) — port 5432 bazy danych nie jest mapowany w
-  `docker-compose.yml`, więc jest osiągalny wyłącznie z wewnętrznej sieci Dockera.
+  Oczekiwane: połączenie odrzucone / timeout. Port bazy danych nie jest mapowany
+  na hosta w `docker-compose.yml`, więc jest osiągalny wyłącznie z wewnętrznej
+  sieci Dockera.
+
+- [ ] Żaden kontener nie publikuje portów na hoście — cały ruch wchodzi przez
+      tunel wychodzący, nie przez port nasłuchujący na serwerze:
+
+  ```bash
+  sudo ss -tlnp | grep -E ':(80|443)\s'
+  ```
+
+  Oczekiwane: polecenie **nie zwraca żadnej linii**.
 
 ## 6. Aktualizacja aplikacji
 
@@ -269,30 +327,38 @@ celowo wyłączonym z zadania backupu VM na poziomie Proxmoksa. Oznacza to, że
 sekcji (dump bazy + rsync zdjęć) są jedynym zabezpieczeniem tych danych i muszą
 być wykonywane niezależnie od backupu Proxmoksa.
 
-**Certyfikat TLS Caddy nie jest objęty backupem katalogu danych.** Magazyn
-certyfikatów Caddy znajduje się w zarządzanym przez Dockera named volume
-`caddy_data`, a nie pod `/srv/wedding`. To celowe: bind-mount katalogu `/data`
-Caddy powodowałby problemy z uprawnieniami wewnątrz kontenera, a certyfikat i tak
-jest automatycznie ponownie wydawany przez Let's Encrypt przy starcie kontenera.
-**Uwaga:** Let's Encrypt zezwala na wydanie tylko pięciu certyfikatów tygodniowo
-dla tej samej domeny — powtarzające się niszczenie wolumenu `caddy_data` (np.
-przez `docker compose down -v` lub ręczne `docker volume rm`) wyczerpie ten limit
-i pozostawi stronę bez HTTPS aż do jego zresetowania (siedem dni od pierwszego
-żądania w oknie limitu). Nie usuwaj wolumenu `caddy_data` bez wyraźnej potrzeby.
+**Plik `.env` z tokenem tunelu trzymaj poza serwerem.** Poza hasłami do bazy i
+panelu administracyjnego, `.env` zawiera teraz `CLOUDFLARE_TUNNEL_TOKEN` — sekret
+wystarczający do uruchomienia obcego konektora podszywającego się pod ten tunel.
+Włącz `.env` do backupu poza serwer (np. w bezpiecznym menedżerze haseł albo w
+zaszyfrowanym archiwum obok kopii bazy), żeby odtworzenie środowiska po awarii VM
+nie wymagało tworzenia tunelu i wszystkich sekretów od nowa — ale nigdy nie
+umieszczaj go w repozytorium ani w kopii zapasowej bez szyfrowania.
 
 ## 8. Diagnostyka
 
-**Certyfikat się nie wydaje** (w logach `docker compose logs caddy` widać błędy
-ACME / `challenge failed`):
-- Sprawdź, czy DNS rzeczywiście wskazuje na ten serwer: `nslookup kasiaikrzys.pl 1.1.1.1`
-  i porównaj z `curl -4 ifconfig.me` na VM (sekcja 2). Adres publiczny domowego
-  łącza mógł się zmienić.
-- Sprawdź, czy port 80 jest osiągalny z internetu (przekierowanie na routerze,
-  firewall) — Let's Encrypt weryfikuje domenę przez HTTP-01 na porcie 80.
-- Sprawdź, czy nie wyczerpano limitu Let's Encrypt (5 certyfikatów/tydzień na
-  domenę) — w logach pojawi się komunikat `too many certificates already issued`.
-  W takim wypadku trzeba odczekać do zresetowania limitu; nie pomoże ponowne
-  uruchamianie kontenera.
+**Strona zwraca błąd 502 od Cloudflare:**
+- Konektor działa (tunel jest osiągalny), ale kontener obsługujący ruch po
+  drugiej stronie nie odpowiada. Sprawdź stan kontenerów:
+
+  ```bash
+  docker compose ps
+  ```
+
+  Najczęściej to `caddy` jest zatrzymany albo restartuje się w pętli — sprawdź
+  `docker compose logs caddy`.
+
+**Tunel w panelu Cloudflare ma status Down:**
+- `docker compose logs cloudflared` — najczęstsza przyczyna to błędny albo
+  nieaktualny `CLOUDFLARE_TUNNEL_TOKEN` w `.env` (np. wklejony z literówką, albo
+  pochodzący z tunelu, który już nie istnieje). Popraw wartość w `.env` i
+  uruchom ponownie: `docker compose up -d cloudflared`.
+
+**Strona nieosiągalna mimo tunelu w stanie Healthy:**
+- Sprawdź w Cloudflare Zero Trust (**Networks → Tunnels → Public Hostname**), czy
+  obie nazwy hosta z sekcji 4 rzeczywiście istnieją i wskazują na
+  `caddy:80` — brak wpisu albo wskazanie na zły adres/port da błąd po stronie
+  Cloudflare, mimo że sam konektor jest zdrowy.
 
 **API nie wstaje** (kontener `api` restartuje się w pętli lub kończy działanie
 zaraz po starcie):
@@ -319,11 +385,24 @@ zaraz po starcie):
 - Sprawdź uprawnienia katalogu `/srv/wedding/photos` na hoście — kontener musi
   mieć prawo zapisu.
 
-**Upload kończy się błędem 413:**
-- Limit rozmiaru pojedynczego żądania w API wynosi 200 MB
-  (`MaxRequestBodySize` w Kestrelu i `MultipartBodyLengthLimit` w `Program.cs`).
-  Błąd 413 oznacza, że przesyłane łącznie w jednym żądaniu zdjęcia przekraczają
-  ten limit — poproś gościa o przesłanie mniejszej liczby zdjęć naraz.
+**Usunięte zdjęcie nadal jest dostępne pod bezpośrednim adresem URL:**
+- Usunięcie zdjęcia w panelu administracyjnym kasuje wiersz w bazie i plik na
+  dysku, ale kopia mogła zostać zbuforowana na brzegu sieci Cloudflare. Adres
+  `https://kasiaikrzys.pl/photos/<guid>.jpg` może więc pozostać osiągalny przez
+  do pięciu minut po usunięciu (`Cache-Control: public, max-age=300` ustawione
+  w `Caddyfile` dla ścieżki `/photos/*`). Jeśli potrzebne jest natychmiastowe
+  usunięcie z brzegu sieci, wyczyść cache ręcznie w panelu Cloudflare:
+  **Caching → Configuration → Purge Everything**, albo wyczyść tylko ten jeden
+  adres (**Custom Purge → Purge by URL**).
+
+**Część zdjęć nie dochodzi:**
+- Każde zdjęcie wysyłane jest osobnym żądaniem (patrz `image-picker.component.ts`
+  i `api.service.ts`), więc problem dotyczy zwykle pojedynczego pliku, nie całej
+  partii. Sprawdź konsolę przeglądarki gościa: kod **413** oznaczałby, że
+  konkretne pojedyncze zdjęcie przekracza limit rozmiaru żądania — mało
+  prawdopodobne dla pojedynczego zdjęcia z telefonu, ale możliwe przy eksporcie
+  z profesjonalnego aparatu. Limit darmowego planu Cloudflare wynosi 100 MB na
+  żądanie (patrz sekcja 9) i to on jest w praktyce pierwszym ograniczeniem.
 
 **Nocny backup nie produkuje żadnego pliku (brak nowego `db-<data>.sql.gz` albo
 zdjęcia nie przybywają na hoście docelowym):**
@@ -344,14 +423,49 @@ zdjęcia nie przybywają na hoście docelowym):**
 
 ## 9. Znane ograniczenia
 
-- **Zmienny adres IP.** Serwer działa na domowym łączu internetowym, które nie ma
-  stałego adresu IP. Rekordy A domeny (`@`, `www`, TTL 600) trzeba aktualizować
-  ręcznie po każdej zmianie adresu — w przeciwnym razie strona przestanie być
-  osiągalna, a Caddy nie odnowi certyfikatu. Docelowym rozwiązaniem jest
-  wykupienie stałego IP u operatora albo skonfigurowanie usługi DDNS
-  aktualizującej rekordy A automatycznie.
+- **Tunel jako pojedynczy punkt awarii.** Cały ruch do serwera przechodzi przez
+  jeden kontener `cloudflared`. Jeśli przestanie się łączyć (np. po chwilowej
+  awarii sieci Cloudflare albo zawieszeniu procesu), strona staje się
+  nieosiągalna, mimo że `caddy`, `api` i `web` działają poprawnie. Pierwszy krok
+  w takiej sytuacji: `docker compose restart cloudflared`.
+- **Cloudflare widzi cały ruch w postaci jawnej.** TLS między przeglądarką gościa
+  a Cloudflare kończy się na Cloudflare — to tam ruch jest odszyfrowywany, zanim
+  trafi tunelem do `cloudflared` i dalej do `caddy`. Cloudflare technicznie ma
+  wgląd w przesyłane zdjęcia i inne dane aplikacji, tak jak każdy dostawca CDN
+  terminujący TLS.
+- **Limit rozmiaru żądania na darmowym planie Cloudflare.** Plan darmowy tnie
+  pojedyncze żądania HTTP na 100 MB. Dlatego wysyłka zdjęć w aplikacji odbywa się
+  po jednym pliku na żądanie (`image-picker.component.ts`, `api.service.ts`), a
+  nie jedną wspólną partią — pojedyncze zdjęcie z telefonu nigdy nie zbliża się
+  do tego limitu, ale cała partia dwudziestu zdjęć w jednym żądaniu mogłaby.
+- **Brak ograniczenia liczby prób logowania do panelu administracyjnego.**
+  `POST /api/Admin/login` jest publicznie dostępny i nie ma żadnego rate
+  limitingu w kodzie API — nic nie blokuje próby odgadnięcia `ADMIN_PASSWORD`
+  brute-force'em. Zalecana mitygacja to reguła rate-limitingu lub WAF w panelu
+  Cloudflare ograniczająca żądania do ścieżki `/api/Admin/*`.
 - **Brak generowania miniatur.** `PhotoService` zapisuje `ThumbPath` jako
   identyczną ścieżkę co `OriginalPath` (miniatura nie jest faktycznie
   generowana) — feed galerii pobiera więc zawsze pełnowymiarowe pliki zdjęć,
   co przy dużej liczbie gości może obciążać transfer i wydłużać ładowanie
   strony na wolniejszym łączu domowym.
+
+## 10. Powrót do przekierowania portów
+
+Gdyby operator kiedyś udostępnił publiczny, statyczny adres IPv4 (koniec
+DS-Lite na tym łączu), da się wrócić do prostszego modelu z bezpośrednim
+przekierowaniem portów i certyfikatem Let's Encrypt wystawianym przez Caddy.
+Skrócony plan zmian — pełne uzasadnienie architektoniczne obu wariantów jest w
+`docs/superpowers/specs/2026-08-25-production-deployment-design.md`:
+
+1. Usuń usługę `cloudflared` z `docker-compose.yml` i przywróć na `caddy` sekcję
+   `ports` publikującą `80:80` i `443:443` na hoście.
+2. Przywróć w `Caddyfile` wariant z automatycznym HTTPS (adresy bloków bez
+   prefiksu `http://`, tak jak wygląda to dla `{$DOMAIN}` gdy Caddy sam zarządza
+   certyfikatem Let's Encrypt) i `ACME_EMAIL` z powrotem w `.env`.
+3. Skonfiguruj na routerze domowym przekierowanie portów 80/443 na
+   `192.168.1.41`.
+4. W panelu DNS wróć z serwerami nazw do az.pl i ustaw rekordy A (`@`, `www`) na
+   aktualny publiczny adres IP — albo zostaw serwery nazw wskazane na Cloudflare
+   i przełącz tam rekordy `@`/`www` w tryb **DNS only** (szara chmurka) zamiast
+   proxy, żeby ruch szedł bezpośrednio do serwera z pominięciem tunelu.
+5. Usuń z Zero Trust tunel, który przestał być używany.

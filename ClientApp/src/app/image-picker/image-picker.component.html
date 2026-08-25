@@ -7,33 +7,61 @@
 
   <!-- Name Input -->
   <div class="mb-8">
-    <input type="text" [(ngModel)]="guestName" placeholder="Twoje Imię/Pseudonim"
-           class="w-full px-4 py-3 text-lg bg-white/60 border border-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-teal-primary text-navy-blue placeholder-navy-blue/40">
+    <input type="text" [(ngModel)]="guestName" placeholder="Twoje Imię/Pseudonim" [disabled]="isUploading"
+           class="w-full px-4 py-3 text-lg bg-white/60 border border-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-teal-primary text-navy-blue placeholder-navy-blue/40 disabled:opacity-60">
   </div>
 
   <input type="file" multiple accept="image/*" #fileInput (change)="onFilesSelected($event)" class="hidden">
 
   <!-- Image Grid -->
   <div class="grid grid-cols-3 gap-2 flex-1 content-start mb-8">
-    
-    <div *ngFor="let url of previewUrls; let i = index" class="aspect-square bg-white/40 border-[1.5px] border-teal-primary relative">
-      <img [src]="url" class="w-full h-full object-cover">
-      <button (click)="removeFile(i)" class="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs shadow">
+
+    <div *ngFor="let photo of photos; let i = index"
+         class="aspect-square bg-white/40 border-[1.5px] relative"
+         [class.border-teal-primary]="!photo.failed"
+         [class.border-red-500]="photo.failed">
+      <img [src]="photo.previewUrl" class="w-full h-full object-cover">
+      <button *ngIf="!isUploading" (click)="removePhoto(i)"
+              class="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs shadow">
         &times;
       </button>
+      <div *ngIf="photo.failed" class="absolute bottom-0 left-0 right-0 bg-red-500/90 text-white text-[10px] text-center py-0.5">
+        Nie wysłano
+      </div>
     </div>
-    
+
     <!-- Add More Placeholder -->
-    <div (click)="triggerFileInput()" class="aspect-square bg-white/40 border-2 border-dashed border-teal-primary/40 flex flex-col items-center justify-center cursor-pointer hover:bg-white/60">
+    <div *ngIf="!isUploading" (click)="triggerFileInput()"
+         class="aspect-square bg-white/40 border-2 border-dashed border-teal-primary/40 flex flex-col items-center justify-center cursor-pointer hover:bg-white/60">
       <span class="text-teal-primary text-2xl font-light">+</span>
     </div>
   </div>
 
   <!-- Bottom Actions Fixed -->
   <div class="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-dusty-teal via-dusty-teal to-transparent space-y-3">
-    <button (click)="uploadFiles()" [disabled]="selectedFiles.length === 0 || !guestName || isUploading"
+
+    <div *ngIf="isUploading" class="space-y-2">
+      <div class="h-1 bg-navy-blue/10 rounded-full overflow-hidden">
+        <div class="h-full bg-eucalyptus transition-all duration-300"
+             [style.width.%]="totalCount ? (attemptedCount / totalCount) * 100 : 0"></div>
+      </div>
+      <p class="text-center text-sm text-navy-blue/70 font-light">
+        Zapisujemy Twoje chwile… {{ savedCount }} z {{ totalCount }}
+      </p>
+    </div>
+
+    <p *ngIf="!isUploading && failedCount > 0" class="text-center text-sm text-red-600 font-light">
+      Nie udało się wysłać {{ failedCount }} zdjęć. Spróbuj ponownie — wyślemy tylko te brakujące.
+    </p>
+
+    <button (click)="uploadFiles()" [disabled]="photos.length === 0 || !guestName || isUploading"
             class="btn-primary w-full disabled:opacity-50">
-      {{ isUploading ? 'Wysyłanie...' : 'Wyślij ' + selectedFiles.length + ' Zdjęć' }}
+      {{ isUploading ? 'Wysyłanie…' : (failedCount > 0 ? 'Ponów wysyłkę' : 'Wyślij ' + photos.length + ' Zdjęć') }}
+    </button>
+
+    <button *ngIf="!isUploading && failedCount > 0" (click)="goToFeed()"
+            class="btn-secondary w-full">
+      Przejdź do galerii
     </button>
   </div>
 

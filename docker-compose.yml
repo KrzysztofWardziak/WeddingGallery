@@ -9,7 +9,7 @@ services:
     volumes:
       - ${DATA_ROOT:?set DATA_ROOT in .env}/db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?set POSTGRES_USER in .env} -d ${POSTGRES_DB:?set POSTGRES_DB in .env}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -40,23 +40,29 @@ services:
     depends_on:
       - api
 
+  # No published ports anywhere: the carrier runs DS-Lite, so ports 80 and 443 are
+  # not obtainable on this connection. The tunnel is the only way in, and it is
+  # established from the inside out.
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
     environment:
       - DOMAIN=${DOMAIN:?set DOMAIN in .env}
-      - ACME_EMAIL=${ACME_EMAIL:?set ACME_EMAIL in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
       - caddy_config:/config
     depends_on:
       - api
       - web
 
+  cloudflared:
+    image: cloudflare/cloudflared:2026.8.2
+    restart: unless-stopped
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    command: tunnel --no-autoupdate run
+    depends_on:
+      - caddy
+
 volumes:
-  caddy_data:
   caddy_config:

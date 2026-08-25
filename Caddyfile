@@ -1,13 +1,10 @@
-{
-	email {$ACME_EMAIL}
-}
-
-# One canonical address: everything on www redirects to the bare domain.
-www.{$DOMAIN} {
+# TLS terminates at Cloudflare; cloudflared reaches this container over the
+# tunnel, so the http:// prefix disables automatic HTTPS and all ACME attempts.
+http://www.{$DOMAIN} {
 	redir https://{$DOMAIN}{uri} permanent
 }
 
-{$DOMAIN} {
+http://{$DOMAIN} {
 	encode zstd gzip
 
 	# API and uploaded photos are both served by the .NET container.
@@ -16,6 +13,7 @@ www.{$DOMAIN} {
 	}
 
 	handle /photos/* {
+		header Cache-Control "public, max-age=300"
 		reverse_proxy api:8080
 	}
 

@@ -52,7 +52,19 @@ export class AdminDashboardComponent implements OnInit {
   }
 
   downloadAll() {
-    window.location.href = `${this.apiUrl}/Photos/event/${this.eventId}/download`;
+    this.apiService.downloadEventZip(this.eventId).subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${this.eventSlug || 'gallery'}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      },
+      error: (err) => console.error(err)
+    });
   }
 
   logout() {

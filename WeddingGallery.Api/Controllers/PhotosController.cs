@@ -5,11 +5,12 @@ namespace WeddingGallery.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class PhotosController : ControllerBase
+    public class PhotosController : AdminAuthorizedControllerBase
     {
         private readonly IPhotoService _photoService;
 
-        public PhotosController(IPhotoService photoService)
+        public PhotosController(IPhotoService photoService, IConfiguration configuration)
+            : base(configuration)
         {
             _photoService = photoService;
         }
@@ -27,9 +28,14 @@ namespace WeddingGallery.Api.Controllers
             }));
         }
 
+        // Full-gallery export. The event GUID is not a secret (it is returned by the
+        // public GET /api/events/{slug} endpoint), so this must stay behind the admin
+        // token or any guest who scanned the QR code could download the whole gallery.
         [HttpGet("event/{eventId}/download")]
         public async Task<IActionResult> DownloadAllPhotos(Guid eventId)
         {
+            if (!ValidateToken()) return Unauthorized();
+
             var (zipBytes, fileName) = await _photoService.GetZipArchiveOfEventPhotosAsync(eventId);
             return File(zipBytes, "application/zip", fileName);
         }
