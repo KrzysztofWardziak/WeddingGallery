@@ -28,7 +28,8 @@ WeddingGallery.Api/wwwroot/photos/
 # Secrets / Environment overrides
 # ========================
 appsettings.Production.json
-appsettings.Development.json
+.env
+data/
 
 # ========================
 # IDE / OS

@@ -1,40 +1,62 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: wedding_gallery
-      POSTGRES_USER: wedding_user
-      POSTGRES_PASSWORD: wedding_password
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      - ${DATA_ROOT:?set DATA_ROOT in .env}/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?set POSTGRES_USER in .env} -d ${POSTGRES_DB:?set POSTGRES_DB in .env}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   api:
     build:
       context: .
       dockerfile: WeddingGallery.Api/Dockerfile
+    restart: unless-stopped
     environment:
-      - ConnectionStrings__DefaultConnection=Host=db;Database=wedding_gallery;Username=wedding_user;Password=wedding_password
-      - ASPNETCORE_ENVIRONMENT=Development
-    ports:
-      - "5000:8080"
+      - ConnectionStrings__DefaultConnection=Host=db;Database=${POSTGRES_DB:?set POSTGRES_DB in .env};Username=${POSTGRES_USER:?set POSTGRES_USER in .env};Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      - ASPNETCORE_ENVIRONMENT=Production
+      - AdminSettings__Password=${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      - AdminSettings__Token=${ADMIN_TOKEN:?set ADMIN_TOKEN in .env}
+    # PhotoService writes to wwwroot/photos and UseStaticFiles serves them from there,
+    # so the volume has to land on exactly that path.
     volumes:
-      - photo_storage:/app/photos
+      - ${DATA_ROOT:?set DATA_ROOT in .env}/photos:/app/wwwroot/photos
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   web:
     build:
       context: ./ClientApp
       dockerfile: Dockerfile
-    ports:
-      - "4200:80"
+    restart: unless-stopped
     depends_on:
       - api
 
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:?set DOMAIN in .env}
+      - ACME_EMAIL=${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+
 volumes:
-  pgdata:
-  photo_storage:
+  caddy_data:
+  caddy_config:

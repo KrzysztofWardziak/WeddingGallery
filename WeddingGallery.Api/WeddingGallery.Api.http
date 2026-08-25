@@ -1,6 +1,68 @@
 @WeddingGallery.Api_HostAddress = http://localhost:5205
+@eventId = 00000000-0000-0000-0000-000000000000
+@adminToken = dev-token
 
-GET {{WeddingGallery.Api_HostAddress}}/weatherforecast/
+### Get event by slug
+GET {{WeddingGallery.Api_HostAddress}}/api/events/nasze-wesele
 Accept: application/json
+
+###
+
+### Get photos for an event
+GET {{WeddingGallery.Api_HostAddress}}/api/photos/event/{{eventId}}
+Accept: application/json
+
+###
+
+### Download all photos for an event as a zip
+GET {{WeddingGallery.Api_HostAddress}}/api/photos/event/{{eventId}}/download
+
+###
+
+### Upload photos (multipart/form-data)
+POST {{WeddingGallery.Api_HostAddress}}/api/photos/upload
+Content-Type: multipart/form-data; boundary=----WeddingGalleryBoundary
+
+------WeddingGalleryBoundary
+Content-Disposition: form-data; name="eventId"
+
+{{eventId}}
+------WeddingGalleryBoundary
+Content-Disposition: form-data; name="uploaderName"
+
+Test Guest
+------WeddingGalleryBoundary
+Content-Disposition: form-data; name="files"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< ./test.jpg
+------WeddingGalleryBoundary--
+
+###
+
+### Admin login
+POST {{WeddingGallery.Api_HostAddress}}/api/admin/login
+Content-Type: application/json
+
+{
+  "password": "admin"
+}
+
+###
+
+### Admin: create event
+POST {{WeddingGallery.Api_HostAddress}}/api/admin/events
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Kasia i Krzys"
+}
+
+###
+
+### Admin: delete photo
+DELETE {{WeddingGallery.Api_HostAddress}}/api/admin/photos/{{eventId}}
+Authorization: Bearer {{adminToken}}
 
 ###

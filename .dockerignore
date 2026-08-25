@@ -1,0 +1,15 @@
+.env
+.env.example
+.git
+.gitignore
+.vs
+.superpowers
+bin/
+obj/
+**/bin/
+**/obj/
+ClientApp/node_modules
+ClientApp/dist
+docs/
+*.pdf
+*.md
