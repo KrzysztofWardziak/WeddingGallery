@@ -50,4 +50,11 @@ export class ApiService {
   deletePhoto(photoId: string): Observable<any> {
     return this.http.delete(`${this.baseUrl}/Admin/photos/${photoId}`, { headers: this.getHeaders() });
   }
+
+  downloadEventZip(eventId: string): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}/Photos/event/${eventId}/download`, {
+      headers: this.getHeaders(),
+      responseType: 'blob'
+    });
+  }
 }

@@ -5,24 +5,16 @@ namespace WeddingGallery.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class AdminController : ControllerBase
+    public class AdminController : AdminAuthorizedControllerBase
     {
         private readonly IEventService _eventService;
         private readonly IPhotoService _photoService;
-        private readonly IConfiguration _configuration;
 
         public AdminController(IEventService eventService, IPhotoService photoService, IConfiguration configuration)
+            : base(configuration)
         {
             _eventService = eventService;
             _photoService = photoService;
-            _configuration = configuration;
-        }
-
-        private bool ValidateToken()
-        {
-            var expectedToken = _configuration["AdminSettings:Token"];
-            var providedToken = Request.Headers["Authorization"].FirstOrDefault()?.Replace("Bearer ", "");
-            return expectedToken == providedToken;
         }
 
         public class LoginRequest { public string Password { get; set; } = string.Empty; }
@@ -30,10 +22,10 @@ namespace WeddingGallery.Api.Controllers
         [HttpPost("login")]
         public IActionResult Login([FromBody] LoginRequest request)
         {
-            var expectedPassword = _configuration["AdminSettings:Password"];
+            var expectedPassword = Configuration["AdminSettings:Password"];
             if (request.Password == expectedPassword)
             {
-                return Ok(new { token = _configuration["AdminSettings:Token"] });
+                return Ok(new { token = Configuration["AdminSettings:Token"] });
             }
             return Unauthorized("Invalid password");
         }
