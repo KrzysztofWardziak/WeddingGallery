@@ -121,6 +121,22 @@ Zablokuj dostęp do pliku dla innych użytkowników:
 chmod 600 .env
 ```
 
+### Testowanie lokalne — nie używaj prawdziwej domeny
+
+**Zanim uruchomisz `docker compose up` na swojej maszynie deweloperskiej**, ustaw w
+lokalnym `.env`:
+
+```
+DOMAIN=localhost
+```
+
+`.env.example` domyślnie zawiera `DOMAIN=kasiaikrzys.pl`. Jeśli zostawisz tę wartość
+podczas lokalnych testów, Caddy spróbuje wystawić prawdziwy certyfikat Let's Encrypt
+dla `kasiaikrzys.pl` — domeny, która nie wskazuje na Twoją maszynę — co i tak się nie
+uda, a każda taka próba zużywa limit pięciu certyfikatów tygodniowo opisany w sekcji 7.
+Przy `DOMAIN=localhost` Caddy automatycznie używa wewnętrznego, samopodpisanego CA
+zamiast Let's Encrypt, więc lokalne testy nie dotykają produkcyjnego limitu ACME.
+
 ## 4. Pierwsze uruchomienie
 
 ```bash
