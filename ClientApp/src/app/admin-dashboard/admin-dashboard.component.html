@@ -1,0 +1,54 @@
+<div class="flex flex-col min-h-screen p-6 pb-24">
+
+  <div class="flex justify-between items-center mb-8">
+    <h2 class="text-xl font-medium tracking-widest text-navy-blue">ADMIN</h2>
+    <button (click)="logout()" class="text-xs text-navy-blue/70 hover:text-navy-blue">Wyloguj</button>
+  </div>
+
+  <!-- QR Code Section -->
+  <div class="bg-white/60 rounded-xl p-6 shadow-sm border border-white flex flex-col items-center mb-8">
+    <p class="text-sm text-navy-blue mb-4 font-medium">Zeskanuj, aby dołączyć:</p>
+    <div class="bg-white p-2 rounded-lg shadow-sm border border-teal-primary/20">
+      <qrcode [qrdata]="eventUrl" [width]="200" [errorCorrectionLevel]="'M'"></qrcode>
+    </div>
+    <p class="text-xs text-navy-blue/60 mt-4">{{ eventUrl }}</p>
+    <a routerLink="/admin/print-qr"
+       class="mt-4 inline-block text-sm text-teal-primary hover:underline">
+      🖨️ Drukuj kod QR (do ramki na stół)
+    </a>
+  </div>
+
+  <!-- Photos Grid -->
+  <div class="flex justify-between items-center mb-4">
+    <h3 class="text-lg text-navy-blue font-light">Zdjęcia Gości ({{ photos.length }})</h3>
+    <div class="flex gap-2">
+      <button (click)="downloadAll()" *ngIf="photos.length > 0"
+        class="text-xs bg-navy-blue text-white px-3 py-1 rounded shadow hover:bg-navy-blue/90">Pobierz ZIP</button>
+      <button (click)="loadPhotos()"
+        class="text-xs bg-white/40 px-3 py-1 rounded text-teal-primary font-medium hover:bg-white/60">Odśwież</button>
+    </div>
+  </div>
+
+  <div class="columns-2 gap-2 space-y-2">
+    <div *ngFor="let photo of photos" class="relative break-inside-avoid bg-white/40 group">
+      <img [src]="imagesUrl + photo.url" class="w-full h-auto object-cover rounded shadow-sm"
+        alt="Zdjęcie gościa">
+
+      <div class="absolute bottom-2 left-2 bg-white/90 px-2 py-1 rounded text-[10px] text-brass font-medium shadow-sm">
+        {{ photo.uploaderName }}
+      </div>
+
+      <!-- Delete Button (Admin only) -->
+      <button (click)="deletePhoto(photo.id)"
+        class="absolute top-2 right-2 bg-red-500/90 hover:bg-red-600 text-white w-6 h-6 rounded-full flex items-center justify-center shadow">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div *ngIf="photos.length === 0" class="text-center text-navy-blue/50 py-10 text-sm">
+    Brak zdjęć. Goście jeszcze nic nie przesłali.
+  </div>
+</div>

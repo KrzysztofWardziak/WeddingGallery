@@ -1,0 +1,38 @@
+# ========================
+# .NET Build Output
+# ========================
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+*.csproj.user
+
+# NuGet packages (local cache)
+packages/
+*.nupkg
+nuget.config
+
+# ========================
+# Angular / Node Build
+# ========================
+ClientApp/node_modules/
+ClientApp/dist/
+
+# ========================
+# Uploaded files (runtime data)
+# ========================
+WeddingGallery.Api/wwwroot/photos/
+
+# ========================
+# Secrets / Environment overrides
+# ========================
+appsettings.Production.json
+appsettings.Development.json
+
+# ========================
+# IDE / OS
+# ========================
+.DS_Store
+Thumbs.db
+*.swp
