@@ -1,7 +1,6 @@
 import { Routes } from '@angular/router';
 import { WelcomeComponent } from './welcome/welcome.component';
 import { ImagePickerComponent } from './image-picker/image-picker.component';
-import { UploadProgressComponent } from './upload-progress/upload-progress.component';
 import { GuestFeedComponent } from './guest-feed/guest-feed.component';
 import { AdminSetupComponent } from './admin-setup/admin-setup.component';
 import { AdminDashboardComponent } from './admin-dashboard/admin-dashboard.component';
@@ -16,7 +15,6 @@ export const routes: Routes = [
   { path: 'admin', component: AdminDashboardComponent, canActivate: [AdminGuard] },
   { path: 'admin/print-qr', component: AdminPrintQrComponent, canActivate: [AdminGuard] },
   { path: 'pick', component: ImagePickerComponent },
-  { path: 'uploading', component: UploadProgressComponent },
   { path: 'feed', component: GuestFeedComponent },
   { path: ':slug', component: WelcomeComponent },
   { path: '**', redirectTo: 'admin/setup' }
