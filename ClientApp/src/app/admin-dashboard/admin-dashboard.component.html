@@ -1,9 +1,11 @@
 <div class="flex flex-col min-h-screen p-6 pb-24">
 
-  <div class="flex justify-between items-center mb-8">
-    <h2 class="text-xl font-medium tracking-widest text-navy-blue">ADMIN</h2>
-    <button (click)="logout()" class="text-xs text-navy-blue/70 hover:text-navy-blue">Wyloguj</button>
+  <div class="flex justify-between items-center mb-2">
+    <a routerLink="/admin/events" class="text-xs text-navy-blue/70 hover:text-navy-blue">← Wydarzenia</a>
+    <button type="button" (click)="logout()" class="text-xs text-navy-blue/70 hover:text-navy-blue">Wyloguj</button>
   </div>
+
+  <h2 class="text-2xl font-light text-navy-blue mb-8 truncate">{{ eventName }}</h2>
 
   <!-- QR Code Section -->
   <div class="bg-white/60 rounded-xl p-6 shadow-sm border border-white flex flex-col items-center mb-8">
@@ -12,7 +14,7 @@
       <qrcode [qrdata]="eventUrl" [width]="200" [errorCorrectionLevel]="'M'"></qrcode>
     </div>
     <p class="text-xs text-navy-blue/60 mt-4">{{ eventUrl }}</p>
-    <a routerLink="/admin/print-qr"
+    <a [routerLink]="['/admin/events', eventId, 'print-qr']"
        class="mt-4 inline-block text-sm text-teal-primary hover:underline">
       🖨️ Drukuj kod QR (do ramki na stół)
     </a>

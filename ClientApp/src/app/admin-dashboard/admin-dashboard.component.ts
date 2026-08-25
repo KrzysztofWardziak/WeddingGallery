@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { QRCodeModule } from 'angularx-qrcode';
 import { ApiService } from '../services/api.service';
 import { GalleryItem } from '../guest-feed/guest-feed.component';
@@ -15,24 +15,41 @@ import { environment } from '../../environments/environment';
 })
 export class AdminDashboardComponent implements OnInit {
   eventId = '';
+  eventName = '';
   eventSlug = '';
   eventUrl = '';
   photos: GalleryItem[] = [];
   imagesUrl = environment.imagesUrl;
   apiUrl = environment.apiUrl;
 
-  constructor(private apiService: ApiService, private router: Router) {}
+  constructor(
+    private apiService: ApiService,
+    private router: Router,
+    private route: ActivatedRoute
+  ) {}
 
   ngOnInit() {
-    this.eventId = localStorage.getItem('admin_event_id') || '';
-    this.eventSlug = localStorage.getItem('admin_event_slug') || '';
-    
+    this.eventId = this.route.snapshot.paramMap.get('id') || '';
+
     if (!this.eventId) {
-      this.router.navigate(['/admin/setup']);
+      this.router.navigate(['/admin/events']);
       return;
     }
 
-    this.eventUrl = `${window.location.origin}/${this.eventSlug}`;
+    // Name and slug come from the API rather than localStorage, so the page is correct
+    // when opened from a link or a fresh browser.
+    this.apiService.getAdminEvent(this.eventId).subscribe({
+      next: (event) => {
+        this.eventName = event.name;
+        this.eventSlug = event.slug;
+        this.eventUrl = `${window.location.origin}/${event.slug}`;
+      },
+      error: (err) => {
+        console.error(err);
+        this.router.navigate(['/admin/events']);
+      }
+    });
+
     this.loadPhotos();
   }
 
@@ -69,8 +86,6 @@ export class AdminDashboardComponent implements OnInit {
   }
 
   logout() {
-    localStorage.removeItem('admin_event_id');
-    localStorage.removeItem('admin_event_slug');
     localStorage.removeItem('admin_token');
     this.router.navigate(['/admin/login']);
   }

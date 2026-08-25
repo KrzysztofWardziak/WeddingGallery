@@ -3,6 +3,15 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
+/// An event as the admin views it: identity plus how much media guests have contributed.
+export interface AdminEvent {
+  id: string;
+  name: string;
+  slug: string;
+  photoCount: number;
+  videoCount: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -30,6 +39,14 @@ export class ApiService {
 
   getEvent(slug: string): Observable<any> {
     return this.http.get(`${this.baseUrl}/events/${slug}`);
+  }
+
+  getAdminEvents(): Observable<AdminEvent[]> {
+    return this.http.get<AdminEvent[]>(`${this.baseUrl}/Admin/events`, { headers: this.getHeaders() });
+  }
+
+  getAdminEvent(eventId: string): Observable<AdminEvent> {
+    return this.http.get<AdminEvent>(`${this.baseUrl}/Admin/events/${eventId}`, { headers: this.getHeaders() });
   }
 
   // One file per request: Cloudflare's free plan rejects requests over 100 MB, and a

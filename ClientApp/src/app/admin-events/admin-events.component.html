@@ -1,0 +1,52 @@
+<div class="flex flex-col min-h-screen p-6">
+
+  <div class="flex justify-between items-center mb-8">
+    <h2 class="text-xl font-medium tracking-widest text-navy-blue">ADMIN</h2>
+    <button type="button" (click)="logout()" class="text-xs text-navy-blue/70 hover:text-navy-blue">Wyloguj</button>
+  </div>
+
+  <div class="flex justify-between items-end mb-5">
+    <div>
+      <h3 class="text-2xl font-light text-navy-blue">Wydarzenia</h3>
+      <p class="text-xs text-navy-blue/60 mt-1">Wybierz wydarzenie, aby zobaczyć jego galerię.</p>
+    </div>
+    <a routerLink="/admin/setup" class="text-sm text-teal-primary hover:underline whitespace-nowrap">+ Nowe</a>
+  </div>
+
+  <p *ngIf="isLoading" class="text-center text-navy-blue/50 py-10 text-sm font-light">
+    Wczytywanie…
+  </p>
+
+  <div *ngIf="error" class="text-center py-10">
+    <p class="text-sm text-red-600 font-light mb-3">{{ error }}</p>
+    <button type="button" (click)="loadEvents()" class="btn-secondary">Spróbuj ponownie</button>
+  </div>
+
+  <div *ngIf="!isLoading && !error" class="space-y-3">
+
+    <a *ngFor="let event of events" [routerLink]="['/admin/events', event.id]"
+       class="flex items-center justify-between bg-white/60 border border-white rounded-xl px-5 py-4 shadow-sm hover:bg-white/80 transition-colors">
+
+      <div class="min-w-0">
+        <p class="text-navy-blue font-light text-lg truncate">{{ event.name }}</p>
+        <!-- Counts are labelled rather than inflected: "1 zdjęcie / 2 zdjęcia / 5 zdjęć" would
+             need Polish plural rules for a number that is only ever glanced at. -->
+        <p class="text-xs text-navy-blue/60 mt-0.5">
+          <span *ngIf="totalCount(event) > 0">zdjęcia: {{ event.photoCount }} · filmy: {{ event.videoCount }}</span>
+          <span *ngIf="totalCount(event) === 0" class="italic">pusto — goście jeszcze nic nie przesłali</span>
+        </p>
+      </div>
+
+      <svg class="w-5 h-5 text-brass shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5l7 7-7 7" />
+      </svg>
+    </a>
+
+    <div *ngIf="events.length === 0" class="text-center py-12">
+      <p class="text-navy-blue/50 text-sm font-light mb-4">Nie masz jeszcze żadnego wydarzenia.</p>
+      <a routerLink="/admin/setup" class="btn-primary inline-block">Stwórz pierwsze wydarzenie</a>
+    </div>
+
+  </div>
+
+</div>
