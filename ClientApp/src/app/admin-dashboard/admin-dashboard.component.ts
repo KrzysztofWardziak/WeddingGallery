@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { QRCodeModule } from 'angularx-qrcode';
 import { ApiService } from '../services/api.service';
+import { GalleryItem } from '../guest-feed/guest-feed.component';
 import { environment } from '../../environments/environment';
 
 @Component({
@@ -16,7 +17,7 @@ export class AdminDashboardComponent implements OnInit {
   eventId = '';
   eventSlug = '';
   eventUrl = '';
-  photos: any[] = [];
+  photos: GalleryItem[] = [];
   imagesUrl = environment.imagesUrl;
   apiUrl = environment.apiUrl;
 
@@ -37,13 +38,13 @@ export class AdminDashboardComponent implements OnInit {
 
   loadPhotos() {
     this.apiService.getPhotos(this.eventId).subscribe({
-      next: (data) => this.photos = data,
+      next: (data) => this.photos = data as GalleryItem[],
       error: (err) => console.error(err)
     });
   }
 
   deletePhoto(id: string) {
-    if (confirm('Czy na pewno chcesz usunąć to zdjęcie?')) {
+    if (confirm('Czy na pewno chcesz usunąć ten plik?')) {
       this.apiService.deletePhoto(id).subscribe({
         next: () => this.loadPhotos(),
         error: (err) => console.error(err)

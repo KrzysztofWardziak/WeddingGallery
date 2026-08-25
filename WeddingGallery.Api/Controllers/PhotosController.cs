@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using WeddingGallery.Application.Interfaces;
+using WeddingGallery.Application.Media;
 
 namespace WeddingGallery.Api.Controllers
 {
@@ -23,6 +24,7 @@ namespace WeddingGallery.Api.Controllers
                 id = p.Id,
                 url = p.OriginalPath,
                 thumbUrl = p.ThumbPath,
+                mediaType = p.MediaType,
                 uploaderName = p.UploaderName,
                 uploadedAt = p.CreatedAt
             }));
@@ -46,10 +48,18 @@ namespace WeddingGallery.Api.Controllers
             if (files == null || files.Count == 0)
                 return BadRequest("No files uploaded");
 
-            var fileData = files.Select(f => (f.FileName, f.OpenReadStream()));
-            var uploadedPhotos = await _photoService.UploadPhotosAsync(eventId, uploaderName, fileData);
+            var fileData = files.Select(f => new UploadedFile(f.FileName, f.Length, f.OpenReadStream()));
 
-            return Ok(uploadedPhotos.Select(p => new { id = p.Id, url = p.OriginalPath }));
+            try
+            {
+                var uploadedPhotos = await _photoService.UploadPhotosAsync(eventId, uploaderName, fileData);
+                return Ok(uploadedPhotos.Select(p => new { id = p.Id, url = p.OriginalPath, mediaType = p.MediaType }));
+            }
+            catch (InvalidMediaFileException ex)
+            {
+                // The message is written for the guest and is shown verbatim in the picker.
+                return BadRequest(ex.Message);
+            }
         }
     }
 }

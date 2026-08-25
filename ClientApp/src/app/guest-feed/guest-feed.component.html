@@ -12,11 +12,11 @@
       <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-navy-blue/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"></path>
       </svg>
-      <input type="search" [(ngModel)]="searchTerm" placeholder="Szukaj zdjęć gościa..."
+      <input type="search" [(ngModel)]="searchTerm" placeholder="Szukaj po imieniu gościa..."
              class="w-full pl-10 pr-4 py-2.5 bg-white/60 border border-white rounded-full text-sm text-navy-blue placeholder-navy-blue/40 focus:outline-none focus:ring-1 focus:ring-teal-primary shadow-sm">
     </div>
     <p *ngIf="searchTerm" class="text-xs text-navy-blue/50 mt-2 text-center">
-      Znaleziono: {{ filteredPhotos.length }} z {{ photos.length }} zdjęć
+      Znaleziono: {{ filteredPhotos.length }} z {{ photos.length }} plików
     </p>
   </div>
 
@@ -24,8 +24,25 @@
   <div class="flex-1 px-2 columns-2 gap-2 space-y-2">
     
     <div *ngFor="let photo of filteredPhotos; let i = index" class="relative break-inside-avoid bg-white/40 mb-2 cursor-pointer" (click)="openPhoto(i)">
-      <img [src]="imagesUrl + photo.url" class="w-full h-auto object-cover rounded shadow-sm" alt="Zdjęcie gościa">
-      
+      <!-- Photos are served at full size; a video shows its ffmpeg-extracted poster frame. -->
+      <img *ngIf="hasThumbnail(photo)" [src]="imagesUrl + photo.thumbUrl"
+           class="w-full h-auto object-cover rounded shadow-sm"
+           [alt]="photo.mediaType === 'video' ? 'Film gościa' : 'Zdjęcie gościa'">
+
+      <!-- ffmpeg could not produce a poster frame; the video itself is still there to play. -->
+      <div *ngIf="!hasThumbnail(photo)"
+           class="w-full aspect-[3/4] rounded shadow-sm bg-navy-blue/80 flex items-center justify-center">
+        <span class="text-white/70 text-[10px] tracking-wide">FILM</span>
+      </div>
+
+      <div *ngIf="photo.mediaType === 'video'" class="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <span class="w-11 h-11 rounded-full bg-black/45 backdrop-blur-sm flex items-center justify-center">
+          <svg class="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </span>
+      </div>
+
       <div class="absolute bottom-2 left-2 bg-white/90 px-2 py-1 rounded text-[10px] text-brass font-medium shadow-sm">
         {{ photo.uploaderName }}
       </div>
@@ -34,15 +51,15 @@
   </div>
 
   <div *ngIf="filteredPhotos.length === 0 && photos.length > 0" class="text-center text-navy-blue/50 py-10 text-sm">
-    Brak zdjęć pasujących do wyszukiwania.
+    Brak plików pasujących do wyszukiwania.
   </div>
 
   <div *ngIf="photos.length === 0" class="text-center text-navy-blue/50 py-10 text-sm">
-    Bądź pierwszym, który udostępni zdjęcie!
+    Bądź pierwszym, który udostępni zdjęcie lub film!
   </div>
 
   <!-- Fullscreen Lightbox Overlay -->
-  <div *ngIf="selectedPhotoUrl" class="fixed inset-0 z-50 bg-black/90 flex items-center justify-center backdrop-blur-sm" (click)="closePhoto()">
+  <div *ngIf="selectedItem as item" class="fixed inset-0 z-50 bg-black/90 flex items-center justify-center backdrop-blur-sm" (click)="closePhoto()">
     <button class="absolute top-6 right-6 text-white bg-black/50 rounded-full w-10 h-10 flex items-center justify-center z-50" (click)="closePhoto()">
       <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -58,7 +75,14 @@
       </svg>
     </button>
 
-    <img [src]="selectedPhotoUrl" class="max-w-full max-h-full object-contain p-4" (click)="$event.stopPropagation()">
+    <!-- playsinline keeps iOS from hijacking the video into its own fullscreen player, which
+         would drop the guest out of the lightbox and its arrows. -->
+    <video *ngIf="item.mediaType === 'video'" [src]="imagesUrl + item.url"
+           controls autoplay playsinline
+           class="max-w-full max-h-full object-contain p-4" (click)="$event.stopPropagation()"></video>
+
+    <img *ngIf="item.mediaType !== 'video'" [src]="imagesUrl + item.url"
+         class="max-w-full max-h-full object-contain p-4" (click)="$event.stopPropagation()">
 
     <!-- Right Arrow -->
     <button *ngIf="selectedIndex !== null && selectedIndex < filteredPhotos.length - 1" 

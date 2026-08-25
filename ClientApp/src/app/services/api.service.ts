@@ -32,10 +32,10 @@ export class ApiService {
     return this.http.get(`${this.baseUrl}/events/${slug}`);
   }
 
-  // One file per request: Cloudflare's free plan rejects requests over 100 MB,
-  // and a single photo never comes close. The API endpoint takes a list, so we
-  // send a list of one.
-  uploadPhoto(eventId: string, uploaderName: string, file: File): Observable<any> {
+  // One file per request: Cloudflare's free plan rejects requests over 100 MB, and a
+  // single photo or short video stays under that on its own - batching them would not.
+  // The API endpoint takes a list, so we send a list of one.
+  uploadMedia(eventId: string, uploaderName: string, file: File): Observable<any> {
     const formData = new FormData();
     formData.append('eventId', eventId);
     formData.append('uploaderName', uploaderName);

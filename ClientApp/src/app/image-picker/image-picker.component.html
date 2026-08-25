@@ -2,7 +2,7 @@
 
   <!-- Header -->
   <div class="mb-6 text-center">
-    <h2 class="text-2xl font-light text-navy-blue tracking-wide">Wybierz Zdjęcia</h2>
+    <h2 class="text-2xl font-light text-navy-blue tracking-wide">Wybierz Zdjęcia i Filmy</h2>
   </div>
 
   <!-- Name Input -->
@@ -11,7 +11,14 @@
            class="w-full px-4 py-3 text-lg bg-white/60 border border-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-teal-primary text-navy-blue placeholder-navy-blue/40 disabled:opacity-60">
   </div>
 
-  <input type="file" multiple accept="image/*" #fileInput (change)="onFilesSelected($event)" class="hidden">
+  <input type="file" multiple accept="image/*,video/*" #fileInput (change)="onFilesSelected($event)" class="hidden">
+
+  <!-- Files turned away before upload (too large for the tunnel's request limit) -->
+  <div *ngIf="rejectedMessages.length > 0" class="mb-4 space-y-1">
+    <p *ngFor="let message of rejectedMessages" class="text-xs text-red-600 font-light leading-snug">
+      {{ message }}
+    </p>
+  </div>
 
   <!-- Image Grid -->
   <div class="grid grid-cols-3 gap-2 flex-1 content-start mb-8">
@@ -20,7 +27,17 @@
          class="aspect-square bg-white/40 border-[1.5px] relative"
          [class.border-teal-primary]="!photo.failed"
          [class.border-red-500]="photo.failed">
-      <img [src]="photo.previewUrl" class="w-full h-full object-cover">
+      <!-- The preview source is a local blob URL, so the video element costs no network. -->
+      <video *ngIf="photo.isVideo" [src]="photo.previewUrl" muted playsinline preload="metadata"
+             class="w-full h-full object-cover bg-navy-blue/80"></video>
+      <img *ngIf="!photo.isVideo" [src]="photo.previewUrl" class="w-full h-full object-cover">
+
+      <div *ngIf="photo.isVideo" class="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <svg class="w-8 h-8 text-white drop-shadow" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      </div>
+
       <button *ngIf="!isUploading" (click)="removePhoto(i)"
               class="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs shadow">
         &times;
@@ -51,12 +68,16 @@
     </div>
 
     <p *ngIf="!isUploading && failedCount > 0" class="text-center text-sm text-red-600 font-light">
-      Nie udało się wysłać {{ failedCount }} zdjęć. Spróbuj ponownie — wyślemy tylko te brakujące.
+      Nie udało się wysłać {{ failedCount }} plików. Spróbuj ponownie — wyślemy tylko te brakujące.
+    </p>
+
+    <p *ngIf="!isUploading && serverErrorMessage" class="text-center text-xs text-red-600 font-light leading-snug">
+      {{ serverErrorMessage }}
     </p>
 
     <button (click)="uploadFiles()" [disabled]="photos.length === 0 || !guestName || isUploading"
             class="btn-primary w-full disabled:opacity-50">
-      {{ isUploading ? 'Wysyłanie…' : (failedCount > 0 ? 'Ponów wysyłkę' : 'Wyślij ' + photos.length + ' Zdjęć') }}
+      {{ isUploading ? 'Wysyłanie…' : (failedCount > 0 ? 'Ponów wysyłkę' : 'Wyślij ' + photos.length + ' Plików') }}
     </button>
 
     <button *ngIf="!isUploading && failedCount > 0" (click)="goToFeed()"

@@ -26,6 +26,7 @@ namespace WeddingGallery.Infrastructure.Data
             modelBuilder.Entity<Photo>(entity =>
             {
                 entity.HasKey(p => p.Id);
+                entity.Property(p => p.MediaType).IsRequired().HasMaxLength(10);
                 entity.HasOne(p => p.Event)
                       .WithMany(e => e.Photos)
                       .HasForeignKey(p => p.EventId)
