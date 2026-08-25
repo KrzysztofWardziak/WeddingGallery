@@ -30,6 +30,29 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Apply pending EF Core migrations on startup so the schema exists in a fresh container.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<WeddingGalleryDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    const int maxAttempts = 10;
+    for (var attempt = 1; ; attempt++)
+    {
+        try
+        {
+            db.Database.Migrate();
+            logger.LogInformation("Database migrations applied.");
+            break;
+        }
+        catch (Exception ex) when (attempt < maxAttempts)
+        {
+            logger.LogWarning(ex, "Database not ready (attempt {Attempt}/{MaxAttempts}), retrying in 3s...", attempt, maxAttempts);
+            Thread.Sleep(TimeSpan.FromSeconds(3));
+        }
+    }
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
