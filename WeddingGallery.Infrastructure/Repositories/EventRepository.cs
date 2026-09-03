@@ -12,9 +12,14 @@ namespace WeddingGallery.Infrastructure.Repositories
         {
         }
 
+        // Case-insensitive on both counts: a guest typing the URL off the printed card lands
+        // on the gallery whatever they capitalise, and EventService uses the same lookup to
+        // avoid minting two slugs that differ only in case. Postgres cannot serve a lowered
+        // comparison from the unique index on Slug, but at one row per wedding the scan is free.
         public async Task<Event?> GetBySlugAsync(string slug)
         {
-            return await _dbSet.FirstOrDefaultAsync(e => e.Slug == slug);
+            var lowered = slug.ToLower();
+            return await _dbSet.FirstOrDefaultAsync(e => e.Slug.ToLower() == lowered);
         }
 
         public async Task<IReadOnlyList<EventSummary>> GetSummariesAsync()
