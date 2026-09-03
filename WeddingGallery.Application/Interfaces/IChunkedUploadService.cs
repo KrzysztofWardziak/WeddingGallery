@@ -29,5 +29,12 @@ namespace WeddingGallery.Application.Interfaces
 
         /// <summary>Deletes sessions older than <paramref name="maxAge"/>; returns how many.</summary>
         Task<int> SweepAsync(TimeSpan maxAge);
+
+        /// <summary>
+        /// Drops every session belonging to an event, used when that event is deleted.
+        /// Completing one afterwards would try to attach a photo to a row that no longer
+        /// exists and fail on the foreign key.
+        /// </summary>
+        Task<int> AbandonForEventAsync(Guid eventId);
     }
 }
