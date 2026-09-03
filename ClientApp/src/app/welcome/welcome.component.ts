@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../services/api.service';
 import { CommonModule } from '@angular/common';
+import { formatEventDate } from '../shared/event-date';
 
 @Component({
   selector: 'app-welcome',
@@ -12,6 +13,7 @@ import { CommonModule } from '@angular/common';
 })
 export class WelcomeComponent implements OnInit {
   eventName = '';
+  formattedDate = '';
   isLoading = true;
   hasError = false;
 
@@ -23,6 +25,7 @@ export class WelcomeComponent implements OnInit {
       this.apiService.getEvent(slug).subscribe({
         next: (event) => {
           this.eventName = event.name;
+          this.formattedDate = formatEventDate(event.eventDate);
           localStorage.setItem('guest_event_id', event.id);
           this.isLoading = false;
         },

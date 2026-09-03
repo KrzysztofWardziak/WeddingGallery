@@ -6,7 +6,10 @@ namespace WeddingGallery.Application.Interfaces
 {
     public interface IEventService
     {
-        Task<Event> CreateEventAsync(string name);
+        /// <summary>
+        /// <paramref name="eventDate"/> is optional; an event without one simply shows no date.
+        /// </summary>
+        Task<Event> CreateEventAsync(string name, DateOnly? eventDate = null);
         Task<Event?> GetEventBySlugAsync(string slug);
 
         /// <summary>Backs the admin event list.</summary>

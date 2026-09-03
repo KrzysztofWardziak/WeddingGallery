@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { QRCodeModule } from 'angularx-qrcode';
 import { ApiService } from '../services/api.service';
 import { GalleryItem } from '../guest-feed/guest-feed.component';
+import { formatEventDate } from '../shared/event-date';
 import { environment } from '../../environments/environment';
 
 @Component({
@@ -16,6 +17,7 @@ import { environment } from '../../environments/environment';
 export class AdminDashboardComponent implements OnInit {
   eventId = '';
   eventName = '';
+  formattedDate = '';
   eventSlug = '';
   eventUrl = '';
   photos: GalleryItem[] = [];
@@ -41,6 +43,7 @@ export class AdminDashboardComponent implements OnInit {
     this.apiService.getAdminEvent(this.eventId).subscribe({
       next: (event) => {
         this.eventName = event.name;
+        this.formattedDate = formatEventDate(event.eventDate);
         this.eventSlug = event.slug;
         this.eventUrl = `${window.location.origin}/${event.slug}`;
       },

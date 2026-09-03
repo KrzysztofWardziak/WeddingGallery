@@ -32,12 +32,13 @@ namespace WeddingGallery.Application.Services
             _chunkedUploadService = chunkedUploadService;
         }
 
-        public async Task<Event> CreateEventAsync(string name)
+        public async Task<Event> CreateEventAsync(string name, DateOnly? eventDate = null)
         {
             var newEvent = new Event
             {
                 Name = name,
                 Slug = await ResolveSlugAsync(name),
+                EventDate = eventDate,
                 AccessToken = Guid.NewGuid().ToString("N")
             };
 

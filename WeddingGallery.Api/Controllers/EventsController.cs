@@ -20,7 +20,14 @@ namespace WeddingGallery.Api.Controllers
             var weddingEvent = await _eventService.GetEventBySlugAsync(slug);
             if (weddingEvent == null) return NotFound();
 
-            return Ok(new { id = weddingEvent.Id, name = weddingEvent.Name, slug = weddingEvent.Slug });
+            // eventDate feeds the guest welcome screen, which shows the couple and the day.
+            return Ok(new
+            {
+                id = weddingEvent.Id,
+                name = weddingEvent.Name,
+                slug = weddingEvent.Slug,
+                eventDate = weddingEvent.EventDate
+            });
         }
     }
 }

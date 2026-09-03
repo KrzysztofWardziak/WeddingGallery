@@ -32,7 +32,13 @@ namespace WeddingGallery.Api.Controllers
             return Unauthorized("Invalid password");
         }
 
-        public class CreateEventRequest { public string Name { get; set; } = string.Empty; }
+        public class CreateEventRequest
+        {
+            public string Name { get; set; } = string.Empty;
+
+            /// <summary>Optional. The browser sends "YYYY-MM-DD", which binds straight to DateOnly.</summary>
+            public DateOnly? EventDate { get; set; }
+        }
 
         [HttpPost("events")]
         public async Task<IActionResult> CreateEvent([FromBody] CreateEventRequest request)
@@ -42,11 +48,12 @@ namespace WeddingGallery.Api.Controllers
             if (string.IsNullOrWhiteSpace(request.Name))
                 return BadRequest("Name is required");
 
-            var newEvent = await _eventService.CreateEventAsync(request.Name);
+            var newEvent = await _eventService.CreateEventAsync(request.Name, request.EventDate);
             return Ok(new {
                 id = newEvent.Id,
                 name = newEvent.Name,
                 slug = newEvent.Slug,
+                eventDate = newEvent.EventDate,
                 accessToken = newEvent.AccessToken
             });
         }
@@ -78,6 +85,7 @@ namespace WeddingGallery.Api.Controllers
             id = summary.Id,
             name = summary.Name,
             slug = summary.Slug,
+            eventDate = summary.EventDate,
             photoCount = summary.PhotoCount,
             videoCount = summary.VideoCount
         };

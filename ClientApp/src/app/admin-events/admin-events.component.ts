@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AdminEvent, ApiService } from '../services/api.service';
+import { formatEventDate } from '../shared/event-date';
 
 @Component({
   selector: 'app-admin-events',
@@ -48,6 +49,10 @@ export class AdminEventsComponent implements OnInit {
 
   totalCount(event: AdminEvent): number {
     return event.photoCount + event.videoCount;
+  }
+
+  eventDateLabel(event: AdminEvent): string {
+    return formatEventDate(event.eventDate);
   }
 
   askToDelete(event: AdminEvent) {
