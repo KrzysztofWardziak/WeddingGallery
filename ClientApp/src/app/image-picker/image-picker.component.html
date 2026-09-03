@@ -1,4 +1,6 @@
-<div class="flex flex-col min-h-screen p-6 pb-40">
+<!-- pb-48 clears the navigation bar plus the action strip at its tallest, which is the
+     retry state: hint, failure count, server message and the button. -->
+<div class="flex flex-col min-h-screen p-6 pb-48">
 
   <!-- Header -->
   <div class="mb-6 text-center">
@@ -59,6 +61,14 @@
 
   <!-- Bottom Actions Fixed. Sits above the navigation bar, which owns the bottom 4rem. -->
   <div class="fixed bottom-16 left-0 right-0 p-6 bg-gradient-to-t from-dusty-teal via-dusty-teal to-transparent space-y-3">
+
+    <!-- Sets the expectation before the guest commits. The upload lives in this tab: closing
+         it, or letting the phone sleep and suspend the tab, stops the transfer with no way to
+         resume. Said here rather than only at the moment of leaving, because on iOS the
+         browser's own "leave site?" prompt often never fires when the system suspends a tab. -->
+    <p *ngIf="photos.length > 0" class="text-center text-xs text-navy-blue/60 font-light leading-snug">
+      Nie zamykaj tej strony i nie blokuj ekranu, dopóki pasek nie dobiegnie do końca.
+    </p>
 
     <div *ngIf="isUploading" class="space-y-2">
       <!-- Bytes, not files: a single long video would otherwise leave this bar frozen. -->
