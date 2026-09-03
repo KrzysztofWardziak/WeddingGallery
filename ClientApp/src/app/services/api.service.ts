@@ -15,6 +15,8 @@ export interface AdminEvent {
   id: string;
   name: string;
   slug: string;
+  /// Calendar day as "YYYY-MM-DD", or null when the event was created without one.
+  eventDate: string | null;
   photoCount: number;
   videoCount: number;
 }
@@ -40,8 +42,11 @@ export class ApiService {
     return this.http.post(`${this.baseUrl}/Admin/login`, { password });
   }
 
-  createEvent(name: string): Observable<any> {
-    return this.http.post(`${this.baseUrl}/Admin/events`, { name }, { headers: this.getHeaders() });
+  createEvent(name: string, eventDate: string | null = null): Observable<any> {
+    return this.http.post(
+      `${this.baseUrl}/Admin/events`,
+      { name, eventDate },
+      { headers: this.getHeaders() });
   }
 
   getEvent(slug: string): Observable<any> {

@@ -17,7 +17,10 @@
     <div class="card-ornament">❧ ❧ ❧</div>
 
     <p class="card-title">Galeria Zdjęć</p>
-    <h1 class="card-event-name">{{ eventName }}</h1>
+    <div class="card-heading">
+      <h1 class="card-event-name">{{ eventName }}</h1>
+      <p *ngIf="formattedDate" class="card-date">{{ formattedDate }}</p>
+    </div>
 
     <div class="divider"></div>
 

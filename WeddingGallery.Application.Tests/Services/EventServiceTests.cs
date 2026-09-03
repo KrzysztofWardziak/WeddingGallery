@@ -108,6 +108,7 @@ public class EventServiceTests
             e.Id,
             e.Name,
             e.Slug,
+            e.EventDate,
             e.Photos.Count(p => p.MediaType == MediaTypes.Image),
             e.Photos.Count(p => p.MediaType == MediaTypes.Video));
     }

@@ -5,4 +5,10 @@ namespace WeddingGallery.Domain;
 /// Domain rather than the Application layer so IEventRepository can return it without the
 /// Domain taking a dependency on Application.
 /// </summary>
-public sealed record EventSummary(Guid Id, string Name, string Slug, int PhotoCount, int VideoCount);
+public sealed record EventSummary(
+    Guid Id,
+    string Name,
+    string Slug,
+    DateOnly? EventDate,
+    int PhotoCount,
+    int VideoCount);

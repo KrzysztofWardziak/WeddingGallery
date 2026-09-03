@@ -20,6 +20,8 @@ namespace WeddingGallery.Infrastructure.Data
             {
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Slug).IsRequired().HasMaxLength(50);
+                // A calendar day, not an instant: "date" carries no time and no zone.
+                entity.Property(e => e.EventDate).HasColumnType("date");
                 entity.HasIndex(e => e.Slug).IsUnique();
             });
 

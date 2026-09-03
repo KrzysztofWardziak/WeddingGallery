@@ -34,6 +34,7 @@
           <p class="text-navy-blue font-light text-lg truncate">{{ event.name }}</p>
           <!-- Counts are labelled rather than inflected: "1 zdjęcie / 2 zdjęcia / 5 zdjęć" would
                need Polish plural rules for a number that is only ever glanced at. -->
+          <p *ngIf="eventDateLabel(event)" class="text-xs text-brass mt-0.5">{{ eventDateLabel(event) }}</p>
           <p class="text-xs text-navy-blue/60 mt-0.5">
             <span *ngIf="totalCount(event) > 0">zdjęcia: {{ event.photoCount }} · filmy: {{ event.videoCount }}</span>
             <span *ngIf="totalCount(event) === 0" class="italic">pusto — goście jeszcze nic nie przesłali</span>

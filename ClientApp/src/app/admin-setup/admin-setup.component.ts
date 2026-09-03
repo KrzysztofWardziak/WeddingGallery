@@ -13,6 +13,8 @@ import { ApiService } from '../services/api.service';
 })
 export class AdminSetupComponent {
   eventName = '';
+  // Bound to <input type="date">, which yields "YYYY-MM-DD" - exactly what DateOnly parses.
+  eventDate = '';
   isLoading = false;
 
   // No redirect when an event already exists: bouncing the admin away from this form was
@@ -22,7 +24,8 @@ export class AdminSetupComponent {
   createEvent() {
     if (!this.eventName) return;
     this.isLoading = true;
-    this.apiService.createEvent(this.eventName).subscribe({
+    // The date is optional, so an empty field goes over as null rather than "".
+    this.apiService.createEvent(this.eventName, this.eventDate || null).subscribe({
       next: (res) => this.router.navigate(['/admin/events', res.id]),
       error: (err) => {
         console.error(err);

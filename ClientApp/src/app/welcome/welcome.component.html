@@ -13,6 +13,8 @@
     <div class="mt-12">
       <h1 class="text-3xl tracking-widest font-serif text-navy-blue mb-2">MEMORIES</h1>
       <p class="text-sm tracking-widest text-navy-blue/70 font-light">{{ eventName | uppercase }}</p>
+      <!-- frontend.md designs this line as "ANNA & MAREK, 2024"; the date completes it. -->
+      <p *ngIf="formattedDate" class="text-xs tracking-widest text-brass font-light mt-1">{{ formattedDate }}</p>
     </div>
 
     <!-- Center Icon -->

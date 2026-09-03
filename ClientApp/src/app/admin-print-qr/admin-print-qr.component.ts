@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { QRCodeModule } from 'angularx-qrcode';
 import { ApiService } from '../services/api.service';
+import { formatEventDate } from '../shared/event-date';
 
 @Component({
   selector: 'app-admin-print-qr',
@@ -14,6 +15,7 @@ import { ApiService } from '../services/api.service';
 export class AdminPrintQrComponent implements OnInit {
   eventName = '';
   eventUrl = '';
+  formattedDate = '';
 
   private eventId = '';
 
@@ -34,6 +36,7 @@ export class AdminPrintQrComponent implements OnInit {
     this.apiService.getAdminEvent(this.eventId).subscribe({
       next: (event) => {
         this.eventName = event.name;
+        this.formattedDate = formatEventDate(event.eventDate);
         this.eventUrl = `${window.location.origin}/${event.slug}`;
       },
       error: (err) => {

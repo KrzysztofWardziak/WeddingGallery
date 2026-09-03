@@ -40,12 +40,24 @@
   margin-bottom: 0.25rem;
 }
 
+/* The wrapper owns the spacing below the heading, so removing the date does not leave the
+   name flush against the QR code. */
+.card-heading {
+  margin-bottom: 2rem;
+}
+
 .card-event-name {
   font-size: 1.6rem;
   color: #2c3e5a;
   font-weight: 600;
-  margin-bottom: 2rem;
+  margin-bottom: 0.25rem;
   letter-spacing: 0.1rem;
+}
+
+.card-date {
+  font-size: 0.95rem;
+  color: #c5a55a;
+  letter-spacing: 0.15rem;
 }
 
 .qr-wrapper {

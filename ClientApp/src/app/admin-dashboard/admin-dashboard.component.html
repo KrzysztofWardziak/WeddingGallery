@@ -5,7 +5,10 @@
     <button type="button" (click)="logout()" class="text-xs text-navy-blue/70 hover:text-navy-blue">Wyloguj</button>
   </div>
 
-  <h2 class="text-2xl font-light text-navy-blue mb-8 truncate">{{ eventName }}</h2>
+  <div class="mb-8">
+    <h2 class="text-2xl font-light text-navy-blue truncate">{{ eventName }}</h2>
+    <p *ngIf="formattedDate" class="text-sm text-brass font-light mt-1">{{ formattedDate }}</p>
+  </div>
 
   <!-- QR Code Section -->
   <div class="bg-white/60 rounded-xl p-6 shadow-sm border border-white flex flex-col items-center mb-8">
