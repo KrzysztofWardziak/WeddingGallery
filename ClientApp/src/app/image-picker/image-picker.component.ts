@@ -1,5 +1,5 @@
 import { Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -40,7 +40,7 @@ const CHUNK_TIMEOUT_MS = 180000;
 @Component({
   selector: 'app-image-picker',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './image-picker.component.html',
   styleUrl: './image-picker.component.css'
 })
@@ -167,10 +167,6 @@ export class ImagePickerComponent implements OnDestroy {
     if (this.failedCount === 0) {
       this.router.navigate(['/feed']);
     }
-  }
-
-  goToFeed() {
-    this.router.navigate(['/feed']);
   }
 
   private async uploadOne(media: SelectedMedia) {
