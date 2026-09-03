@@ -185,6 +185,35 @@ namespace WeddingGallery.Application.Services
             return Task.FromResult(removed);
         }
 
+        public async Task<int> AbandonForEventAsync(Guid eventId)
+        {
+            if (!Directory.Exists(_root))
+            {
+                return 0;
+            }
+
+            var removed = 0;
+
+            foreach (var metadataPath in Directory.GetFiles(_root, $"*{MetadataExtension}"))
+            {
+                if (!Guid.TryParse(Path.GetFileNameWithoutExtension(metadataPath), out var uploadId))
+                {
+                    continue;
+                }
+
+                var metadata = await ReadMetadataAsync(uploadId);
+                if (metadata is null || metadata.EventId != eventId)
+                {
+                    continue;
+                }
+
+                await DeleteSessionAsync(uploadId);
+                removed++;
+            }
+
+            return removed;
+        }
+
         private Task DeleteSessionAsync(Guid uploadId)
         {
             DeleteIfExists(PartPath(uploadId));

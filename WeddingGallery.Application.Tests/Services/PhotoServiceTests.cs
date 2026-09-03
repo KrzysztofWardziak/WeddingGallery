@@ -117,6 +117,39 @@ public class PhotoServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Deleting_an_event_removes_every_stored_file_and_row()
+    {
+        var generator = new FakeThumbnailGenerator(succeed: true, writeFile: true);
+        var service = CreateService(generator);
+        var eventId = Guid.NewGuid();
+        var otherEventId = Guid.NewGuid();
+
+        var video = await service.UploadPhotoAsync(eventId, "Ania", File("dance.mp4"));
+        var photo = await service.UploadPhotoAsync(eventId, "Bartek", File("kiss.jpg"));
+        var untouched = await service.UploadPhotoAsync(otherEventId, "Zosia", File("other.jpg"));
+
+        await service.DeletePhotosForEventAsync(eventId);
+
+        // Files go explicitly: the database cascade takes the rows but never the bytes.
+        Assert.False(System.IO.File.Exists(StoredPath(video.OriginalPath)));
+        Assert.False(System.IO.File.Exists(StoredPath(video.ThumbPath)));
+        Assert.False(System.IO.File.Exists(StoredPath(photo.OriginalPath)));
+        Assert.True(System.IO.File.Exists(StoredPath(untouched.OriginalPath)));
+
+        Assert.Equal(new[] { untouched.Id }, _repository.Saved.Select(p => p.Id));
+    }
+
+    [Fact]
+    public async Task Deleting_an_event_with_no_media_is_harmless()
+    {
+        var service = CreateService(new FakeThumbnailGenerator(succeed: true));
+
+        await service.DeletePhotosForEventAsync(Guid.NewGuid());
+
+        Assert.Empty(_repository.Saved);
+    }
+
+    [Fact]
     public async Task Deleting_a_video_also_removes_its_thumbnail_file()
     {
         var generator = new FakeThumbnailGenerator(succeed: true, writeFile: true);

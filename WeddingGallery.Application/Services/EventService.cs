@@ -16,10 +16,20 @@ namespace WeddingGallery.Application.Services
         private const int MaxNumberedSlugAttempts = 100;
 
         private readonly IEventRepository _eventRepository;
+        private readonly IPhotoService _photoService;
+        private readonly IChunkedUploadService _chunkedUploadService;
 
-        public EventService(IEventRepository eventRepository)
+        // Deleting an event genuinely spans all three concerns - rows, stored files and
+        // in-flight uploads - so this service coordinates them. The alternative, orchestrating
+        // from the controller, would put that ordering somewhere far harder to test.
+        public EventService(
+            IEventRepository eventRepository,
+            IPhotoService photoService,
+            IChunkedUploadService chunkedUploadService)
         {
             _eventRepository = eventRepository;
+            _photoService = photoService;
+            _chunkedUploadService = chunkedUploadService;
         }
 
         public async Task<Event> CreateEventAsync(string name)
@@ -74,6 +84,32 @@ namespace WeddingGallery.Application.Services
         public async Task<EventSummary?> GetEventSummaryAsync(Guid id)
         {
             return await _eventRepository.GetSummaryByIdAsync(id);
+        }
+
+        public async Task<EventDeletionResult> DeleteEventAsync(Guid id, string? confirmName)
+        {
+            var weddingEvent = await _eventRepository.GetByIdAsync(id);
+            if (weddingEvent is null)
+            {
+                return EventDeletionResult.NotFound;
+            }
+
+            // The admin is retyping a name off the screen, often on a keyboard that
+            // capitalises for them, so case and padding are forgiven - but nothing else is,
+            // and a blank confirmation never matches.
+            if (string.IsNullOrWhiteSpace(confirmName) ||
+                !string.Equals(confirmName.Trim(), weddingEvent.Name.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return EventDeletionResult.NameMismatch;
+            }
+
+            // Media first. Dropping the event row ahead of this lets the cascade take the
+            // Photo rows away, and the file paths with them, leaving the bytes unreachable.
+            await _chunkedUploadService.AbandonForEventAsync(id);
+            await _photoService.DeletePhotosForEventAsync(id);
+            await _eventRepository.DeleteAsync(weddingEvent);
+
+            return EventDeletionResult.Deleted;
         }
     }
 }

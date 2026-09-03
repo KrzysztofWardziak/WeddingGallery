@@ -52,6 +52,14 @@ export class ApiService {
     return this.http.get<AdminEvent[]>(`${this.baseUrl}/Admin/events`, { headers: this.getHeaders() });
   }
 
+  // Irreversible. confirmName is verified server-side against the event's name, so this is
+  // a real guard rather than a browser-only formality.
+  deleteAdminEvent(eventId: string, confirmName: string): Observable<void> {
+    return this.http.delete<void>(
+      `${this.baseUrl}/Admin/events/${eventId}?confirmName=${encodeURIComponent(confirmName)}`,
+      { headers: this.getHeaders() });
+  }
+
   getAdminEvent(eventId: string): Observable<AdminEvent> {
     return this.http.get<AdminEvent>(`${this.baseUrl}/Admin/events/${eventId}`, { headers: this.getHeaders() });
   }

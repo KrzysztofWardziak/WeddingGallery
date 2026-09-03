@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using WeddingGallery.Application.Events;
 using WeddingGallery.Application.Interfaces;
 using WeddingGallery.Domain;
 
@@ -80,6 +81,26 @@ namespace WeddingGallery.Api.Controllers
             photoCount = summary.PhotoCount,
             videoCount = summary.VideoCount
         };
+
+        // Irreversible: takes the event, its photos and videos, their files on disk, and any
+        // chunked upload still in flight. confirmName must match the event name, checked in the
+        // service rather than only in the browser so a mistyped request cannot wipe a gallery.
+        [HttpDelete("events/{id}")]
+        public async Task<IActionResult> DeleteEvent(Guid id, [FromQuery] string? confirmName)
+        {
+            if (!ValidateToken()) return Unauthorized();
+
+            var result = await _eventService.DeleteEventAsync(id, confirmName);
+
+            return result switch
+            {
+                EventDeletionResult.Deleted => NoContent(),
+                EventDeletionResult.NotFound => NotFound(),
+                EventDeletionResult.NameMismatch =>
+                    BadRequest("Wpisana nazwa nie zgadza się z nazwą wydarzenia."),
+                _ => StatusCode(StatusCodes.Status500InternalServerError)
+            };
+        }
 
         [HttpDelete("photos/{id}")]
         public async Task<IActionResult> DeletePhoto(Guid id)

@@ -24,29 +24,84 @@
 
   <div *ngIf="!isLoading && !error" class="space-y-3">
 
-    <a *ngFor="let event of events" [routerLink]="['/admin/events', event.id]"
-       class="flex items-center justify-between bg-white/60 border border-white rounded-xl px-5 py-4 shadow-sm hover:bg-white/80 transition-colors">
+    <!-- The card is a div, not an anchor: a button nested inside a link is invalid HTML and
+         tapping it would navigate instead of deleting. Link and bin are siblings. -->
+    <div *ngFor="let event of events"
+         class="flex items-center bg-white/60 border border-white rounded-xl shadow-sm hover:bg-white/80 transition-colors">
 
-      <div class="min-w-0">
-        <p class="text-navy-blue font-light text-lg truncate">{{ event.name }}</p>
-        <!-- Counts are labelled rather than inflected: "1 zdjęcie / 2 zdjęcia / 5 zdjęć" would
-             need Polish plural rules for a number that is only ever glanced at. -->
-        <p class="text-xs text-navy-blue/60 mt-0.5">
-          <span *ngIf="totalCount(event) > 0">zdjęcia: {{ event.photoCount }} · filmy: {{ event.videoCount }}</span>
-          <span *ngIf="totalCount(event) === 0" class="italic">pusto — goście jeszcze nic nie przesłali</span>
-        </p>
-      </div>
+      <a [routerLink]="['/admin/events', event.id]" class="flex items-center justify-between flex-1 min-w-0 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-navy-blue font-light text-lg truncate">{{ event.name }}</p>
+          <!-- Counts are labelled rather than inflected: "1 zdjęcie / 2 zdjęcia / 5 zdjęć" would
+               need Polish plural rules for a number that is only ever glanced at. -->
+          <p class="text-xs text-navy-blue/60 mt-0.5">
+            <span *ngIf="totalCount(event) > 0">zdjęcia: {{ event.photoCount }} · filmy: {{ event.videoCount }}</span>
+            <span *ngIf="totalCount(event) === 0" class="italic">pusto — goście jeszcze nic nie przesłali</span>
+          </p>
+        </div>
 
-      <svg class="w-5 h-5 text-brass shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5l7 7-7 7" />
-      </svg>
-    </a>
+        <svg class="w-5 h-5 text-brass shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5l7 7-7 7" />
+        </svg>
+      </a>
+
+      <button type="button" (click)="askToDelete(event)" title="Usuń wydarzenie"
+              class="shrink-0 px-4 py-4 text-navy-blue/30 hover:text-red-600 transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      </button>
+    </div>
 
     <div *ngIf="events.length === 0" class="text-center py-12">
       <p class="text-navy-blue/50 text-sm font-light mb-4">Nie masz jeszcze żadnego wydarzenia.</p>
       <a routerLink="/admin/setup" class="btn-primary inline-block">Stwórz pierwsze wydarzenie</a>
     </div>
 
+  </div>
+
+  <!-- Deletion dialog. Nothing here is recoverable, so the numbers are stated plainly and
+       the button stays dead until the name is retyped. -->
+  <div *ngIf="eventToDelete as target" class="fixed inset-0 z-50 bg-navy-blue/60 backdrop-blur-sm flex items-center justify-center p-6"
+       (click)="cancelDelete()">
+
+    <div class="w-full max-w-sm bg-white rounded-xl shadow-lg p-6" (click)="$event.stopPropagation()">
+      <h4 class="text-lg font-light text-navy-blue mb-2">Usunąć to wydarzenie?</h4>
+
+      <p class="text-sm text-navy-blue/70 font-light leading-relaxed mb-1">
+        <span class="font-medium text-navy-blue">{{ target.name }}</span>
+      </p>
+
+      <p class="text-sm text-red-700 font-light leading-relaxed mb-4">
+        <span *ngIf="totalCount(target) > 0">
+          Bezpowrotnie przepadnie {{ target.photoCount }} zdjęć i {{ target.videoCount }} filmów
+          razem z plikami na dysku. Tego nie da się cofnąć.
+        </span>
+        <span *ngIf="totalCount(target) === 0">
+          To wydarzenie jest puste. Usunięcia i tak nie da się cofnąć.
+        </span>
+      </p>
+
+      <label class="block text-xs text-navy-blue/60 mb-2">
+        Aby potwierdzić, przepisz nazwę wydarzenia:
+      </label>
+      <input type="text" [(ngModel)]="confirmName" [disabled]="isDeleting" [placeholder]="target.name"
+             class="w-full px-3 py-2 mb-4 border border-navy-blue/20 rounded-lg text-navy-blue focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60">
+
+      <p *ngIf="deleteError" class="text-xs text-red-600 font-light mb-3">{{ deleteError }}</p>
+
+      <div class="flex gap-3">
+        <button type="button" (click)="cancelDelete()" [disabled]="isDeleting"
+                class="flex-1 py-2.5 rounded-full border border-navy-blue/20 text-navy-blue text-sm hover:bg-navy-blue/5 disabled:opacity-50">
+          Anuluj
+        </button>
+        <button type="button" (click)="confirmDelete()" [disabled]="!canConfirmDelete"
+                class="flex-1 py-2.5 rounded-full bg-red-600 text-white text-sm hover:bg-red-700 disabled:opacity-40">
+          {{ isDeleting ? 'Usuwanie…' : 'Usuń na zawsze' }}
+        </button>
+      </div>
+    </div>
   </div>
 
 </div>

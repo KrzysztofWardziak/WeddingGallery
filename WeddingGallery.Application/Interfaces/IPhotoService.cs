@@ -25,5 +25,12 @@ namespace WeddingGallery.Application.Interfaces
         Task<IEnumerable<Photo>> GetPhotosByEventAsync(Guid eventId);
         Task<(byte[] ZipFileBytes, string FileName)> GetZipArchiveOfEventPhotosAsync(Guid eventId);
         Task DeletePhotoAsync(Guid photoId);
+
+        /// <summary>
+        /// Removes every photo of an event, rows and stored files alike. Called when an event
+        /// is deleted: the database cascade would drop the rows on its own but leave every
+        /// byte on the volume with nothing left pointing at it.
+        /// </summary>
+        Task DeletePhotosForEventAsync(Guid eventId);
     }
 }

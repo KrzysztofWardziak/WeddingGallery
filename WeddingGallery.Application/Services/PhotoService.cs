@@ -104,6 +104,25 @@ namespace WeddingGallery.Application.Services
             await _photoRepository.DeleteAsync(photo);
         }
 
+        public async Task DeletePhotosForEventAsync(Guid eventId)
+        {
+            var photos = await _photoRepository.GetByEventIdAsync(eventId);
+
+            foreach (var photo in photos)
+            {
+                DeleteStoredFile(photo.OriginalPath);
+
+                // A video's poster frame is a separate file; for images ThumbPath is the
+                // original, so deleting it twice would be wrong.
+                if (!string.IsNullOrEmpty(photo.ThumbPath) && photo.ThumbPath != photo.OriginalPath)
+                {
+                    DeleteStoredFile(photo.ThumbPath);
+                }
+
+                await _photoRepository.DeleteAsync(photo);
+            }
+        }
+
         // The client-supplied name is attacker-controlled and can contain path separators or
         // ".." segments. Path.GetFileName strips any directory portion so the stored file can
         // never escape _uploadPath, while the original is kept as the display name.

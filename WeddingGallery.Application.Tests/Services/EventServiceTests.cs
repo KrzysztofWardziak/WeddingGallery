@@ -1,5 +1,6 @@
 using WeddingGallery.Application.Events;
 using WeddingGallery.Application.Services;
+using WeddingGallery.Application.Tests.Doubles;
 using WeddingGallery.Domain;
 using WeddingGallery.Domain.Entities;
 using WeddingGallery.Domain.Interfaces;
@@ -13,7 +14,8 @@ public class EventServiceTests
 
     public EventServiceTests()
     {
-        _service = new EventService(_repository);
+        // Slug behaviour does not touch media; the doubles refuse any call it should not make.
+        _service = new EventService(_repository, new RecordingPhotoService(), new RecordingChunkedUploadService());
     }
 
     [Fact]
