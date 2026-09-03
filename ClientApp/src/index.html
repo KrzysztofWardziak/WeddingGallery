@@ -9,7 +9,13 @@
        this is the label that ends up under the icon on iOS. -->
   <meta name="apple-mobile-web-app-title" content="K &amp; K">
   <meta name="application-name" content="K &amp; K">
-  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <!-- .ico first with an explicit size, .svg second: browsers that understand the vector
+       prefer it and stay crisp at any zoom, the rest fall back to the raster. -->
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <!-- Tints the browser chrome on Android to match the icon plate and the bottom nav bar. -->
+  <meta name="theme-color" content="#1a2e45">
 </head>
 <body>
   <app-root></app-root>
