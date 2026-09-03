@@ -141,9 +141,23 @@ Zablokuj dostęp do pliku dla innych użytkowników:
 chmod 600 .env
 ```
 
-Do testów lokalnych na własnej maszynie deweloperskiej wystarczy uruchomić
-wszystko bez kontenera `cloudflared` (np. `docker compose up -d db api web caddy`)
-— nie ma już potrzeby podmieniać `DOMAIN` na `localhost`.
+Do testów lokalnych na własnej maszynie deweloperskiej trzeba dołożyć nakładkę
+`docker-compose.local.yml` i pominąć kontener `cloudflared`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build db api web caddy
+```
+
+Aplikacja jest wtedy pod `http://localhost:8080`. W `.env` musi być `DOMAIN=localhost`:
+`Caddyfile` dopasowuje żądania po nazwie hosta, a Caddy na żądanie z niedopasowanym
+nagłówkiem `Host` odpowiada `200` z **pustym ciałem** — w przeglądarce widać białą
+stronę, nie błąd, więc łatwo wziąć to za awarię aplikacji.
+
+**Nakładka jest obowiązkowa i nie ładuje się sama.** Bazowy `docker-compose.yml`
+nie publikuje żadnego portu — na serwerze ruch wchodzi wyłącznie tunelem. Samo
+`docker compose up -d db api web caddy` wystartuje więc komplet zdrowych
+kontenerów, do których nie da się dostać z przeglądarki. Publikację portu hosta
+dodaje dopiero `-f docker-compose.local.yml`.
 
 **Uwaga przy diagnozowaniu konfiguracji.** `docker compose config` wypisuje
 rozwiniętą konfigurację ze wszystkimi zmiennymi z `.env`, w tym hasłami,
@@ -353,6 +367,32 @@ umieszczaj go w repozytorium ani w kopii zapasowej bez szyfrowania.
   nieaktualny `CLOUDFLARE_TUNNEL_TOKEN` w `.env` (np. wklejony z literówką, albo
   pochodzący z tunelu, który już nie istnieje). Popraw wartość w `.env` i
   uruchom ponownie: `docker compose up -d cloudflared`.
+
+**Lokalnie strona się nie otwiera, choć `docker compose ps` pokazuje `80/tcp`:**
+- Kolumna PORTS z samym `80/tcp` oznacza port, na którym kontener nasłuchuje
+  *wewnątrz sieci Dockera* — to `EXPOSE` z obrazu, nie mapowanie na hosta.
+  Opublikowany port wygląda tak: `0.0.0.0:8080->80/tcp`. Rozstrzygające sprawdzenie:
+
+  ```bash
+  docker port weddinggallery-caddy-1
+  ```
+
+  Pusty wynik = nic nie jest wystawione na hosta, żaden adres w przeglądarce nie
+  zadziała. Przyczyna niemal zawsze ta sama: stos wystartował bez nakładki
+  `docker-compose.local.yml` (patrz sekcja 3).
+
+**Port jest opublikowany, ale przeglądarka pokazuje białą stronę:**
+- Niedopasowany `Host` — `DOMAIN` w `.env` nie zgadza się z adresem, pod który
+  wchodzisz. Caddy nie ma wtedy żadnej trasy dla tego żądania i zwraca `200`
+  z pustym ciałem, co wygląda jak zepsuta aplikacja, a nie jak błąd routingu.
+  Porównaj rozmiar odpowiedzi dla obu nazw:
+
+  ```bash
+  curl -s -o /dev/null -w '%{size_download}\n' -H 'Host: localhost' http://localhost:8080/
+  ```
+
+  Zero bajtów = zły `Host`. Lokalnie ustaw `DOMAIN=localhost`; na serwerze `DOMAIN`
+  musi być dokładnie tą nazwą, którą tunel podaje w nagłówku `Host`.
 
 **Strona nieosiągalna mimo tunelu w stanie Healthy:**
 - Sprawdź w Cloudflare Zero Trust (**Networks → Tunnels → Public Hostname**), czy
