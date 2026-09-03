@@ -37,7 +37,7 @@ public sealed class MediaFileValidator : IMediaFileValidator
             var limitMb = MaxFileBytes / (1024 * 1024);
             return MediaValidationResult.Invalid(
                 $"Plik {fileName} jest za duży ({sizeMb} MB). Limit to {limitMb} MB — nagraj krótszy film " +
-                "lub wyślij go w niższej jakości.");
+                "albo przełącz aparat na 1080p.");
         }
 
         var extension = Path.GetExtension(fileName);

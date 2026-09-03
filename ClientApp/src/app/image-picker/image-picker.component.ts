@@ -78,9 +78,13 @@ export class ImagePickerComponent implements OnDestroy {
 
       if (file.size > MAX_FILE_BYTES) {
         const sizeMb = Math.round(file.size / (1024 * 1024));
+        const limitMb = Math.round(MAX_FILE_BYTES / (1024 * 1024));
+        // Deliberately no promised duration: how much fits depends entirely on the camera
+        // mode. 4K/60 burns the whole allowance in about 15 seconds, so telling every guest
+        // "about a minute" was wrong for most modern phones.
         this.rejectedMessages.push(
-          `${file.name} (${sizeMb} MB) jest za duży — nagraj krótszy film (do ok. 1 min) ` +
-          `lub wyślij go w niższej jakości.`);
+          `${file.name} (${sizeMb} MB) przekracza limit ${limitMb} MB. Nagraj krótszy film ` +
+          `albo przełącz aparat na 1080p — w 4K limit kończy się już po kilkunastu sekundach.`);
         continue;
       }
 
@@ -106,7 +110,8 @@ export class ImagePickerComponent implements OnDestroy {
   }
 
   uploadFiles() {
-    if (this.photos.length === 0 || !this.guestName || this.isUploading) return;
+    // The name is optional; only the files are required.
+    if (this.photos.length === 0 || this.isUploading) return;
 
     localStorage.setItem('guest_name', this.guestName);
 
