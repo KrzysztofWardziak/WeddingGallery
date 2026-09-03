@@ -104,6 +104,12 @@ namespace WeddingGallery.Application.Services
             await _photoRepository.DeleteAsync(photo);
         }
 
+        // The client-supplied name is attacker-controlled and can contain path separators or
+        // ".." segments. Path.GetFileName strips any directory portion so the stored file can
+        // never escape _uploadPath, while the original is kept as the display name.
+        private static string BuildStoredFileName(string originalFileName) =>
+            $"{Guid.NewGuid()}_{Path.GetFileName(originalFileName)}";
+
         // The name field is optional in the picker, and it arrives with whatever whitespace the
         // phone keyboard added.
         private static string NormaliseUploaderName(string? uploaderName) =>
@@ -126,8 +132,7 @@ namespace WeddingGallery.Application.Services
             // and can contain path separators or ".." segments. Path.GetFileName strips any
             // directory portion so the stored file can never escape _uploadPath, while the
             // original name is still kept as the display name (Photo.FileName).
-            var safeFileName = Path.GetFileName(file.FileName);
-            var uniqueFileName = $"{Guid.NewGuid()}_{safeFileName}";
+            var uniqueFileName = BuildStoredFileName(file.FileName);
             var filePath = Path.Combine(_uploadPath, uniqueFileName);
 
             await using (var fileStreamOutput = new FileStream(filePath, FileMode.Create))
@@ -135,10 +140,30 @@ namespace WeddingGallery.Application.Services
                 await file.Content.CopyToAsync(fileStreamOutput);
             }
 
+            return await RecordAsync(eventId, uploaderName, file.FileName, uniqueFileName, filePath, mediaType);
+        }
+
+        public async Task<Photo> AdoptFileAsync(
+            Guid eventId, string? uploaderName, string originalFileName, string mediaType, string sourceFilePath)
+        {
+            var uniqueFileName = BuildStoredFileName(originalFileName);
+            var filePath = Path.Combine(_uploadPath, uniqueFileName);
+
+            // Move, not copy: the chunked path has already written the whole file once, and
+            // reading a 500 MB video back just to write it again is the cost this design exists
+            // to avoid. Both directories sit on the same volume, so this is a rename.
+            File.Move(sourceFilePath, filePath, overwrite: false);
+
+            return await RecordAsync(eventId, uploaderName, originalFileName, uniqueFileName, filePath, mediaType);
+        }
+
+        private async Task<Photo> RecordAsync(
+            Guid eventId, string? uploaderName, string originalFileName, string uniqueFileName, string filePath, string mediaType)
+        {
             var photo = new Photo
             {
                 EventId = eventId,
-                FileName = file.FileName,
+                FileName = originalFileName,
                 UploaderName = NormaliseUploaderName(uploaderName),
                 OriginalPath = $"/photos/{uniqueFileName}",
                 ThumbPath = mediaType == MediaTypes.Video

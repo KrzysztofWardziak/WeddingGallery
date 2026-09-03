@@ -1,0 +1,12 @@
+# Nakladka do testow na maszynie deweloperskiej. Produkcja wpuszcza ruch wylacznie
+# tunelem Cloudflare i nie publikuje zadnych portow; lokalnie tunelu nie ma, wiec
+# Caddy musi byc dostepny bezposrednio przez port hosta.
+#
+# Uruchomienie (bez cloudflared):
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build db api web caddy
+#
+# Aplikacja: http://localhost:8080
+services:
+  caddy:
+    ports:
+      - "8080:80"

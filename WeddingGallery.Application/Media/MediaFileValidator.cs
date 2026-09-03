@@ -24,17 +24,20 @@ public sealed class MediaFileValidator : IMediaFileValidator
         [".webm"] = MediaTypes.Video
     };
 
-    public MediaValidationResult Validate(string fileName, long sizeInBytes)
+    public MediaValidationResult Validate(string fileName, long sizeInBytes) =>
+        Validate(fileName, sizeInBytes, MaxFileBytes);
+
+    public MediaValidationResult Validate(string fileName, long sizeInBytes, long maxBytes)
     {
         if (sizeInBytes <= 0)
         {
             return MediaValidationResult.Invalid($"Plik {fileName} jest pusty.");
         }
 
-        if (sizeInBytes > MaxFileBytes)
+        if (sizeInBytes > maxBytes)
         {
             var sizeMb = sizeInBytes / (1024 * 1024);
-            var limitMb = MaxFileBytes / (1024 * 1024);
+            var limitMb = maxBytes / (1024 * 1024);
             return MediaValidationResult.Invalid(
                 $"Plik {fileName} jest za duży ({sizeMb} MB). Limit to {limitMb} MB — nagraj krótszy film " +
                 "albo przełącz aparat na 1080p.");

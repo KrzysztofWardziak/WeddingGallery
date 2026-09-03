@@ -28,6 +28,10 @@ services:
     # so the volume has to land on exactly that path.
     volumes:
       - ${DATA_ROOT:?set DATA_ROOT in .env}/photos:/app/wwwroot/photos
+      # Partial chunked uploads. Kept off the container's writable layer because a single
+      # in-flight video can be 500 MB, and outside wwwroot so nothing serves a half-received
+      # file to the public.
+      - ${DATA_ROOT:?set DATA_ROOT in .env}/uploads-tmp:/app/uploads-tmp
     depends_on:
       db:
         condition: service_healthy
