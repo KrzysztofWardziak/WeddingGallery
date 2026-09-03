@@ -3,6 +3,13 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
+/// A chunked upload in flight. chunkSize is the server's advice on how much to send at once.
+export interface UploadSession {
+  uploadId: string;
+  offset: number;
+  chunkSize: number;
+}
+
 /// An event as the admin views it: identity plus how much media guests have contributed.
 export interface AdminEvent {
   id: string;
@@ -58,6 +65,39 @@ export class ApiService {
     formData.append('uploaderName', uploaderName);
     formData.append('files', file);
     return this.http.post(`${this.baseUrl}/photos/upload`, formData);
+  }
+
+  // Chunked upload, for files too large to cross Cloudflare in one request. Validation of
+  // format and size happens here, before any bytes travel.
+  startUpload(eventId: string, uploaderName: string, file: File): Observable<UploadSession> {
+    return this.http.post<UploadSession>(`${this.baseUrl}/photos/uploads`, {
+      eventId,
+      uploaderName,
+      fileName: file.name,
+      totalSize: file.size
+    });
+  }
+
+  // Asks the server how far the upload actually got. This is what makes a retry resume
+  // rather than start over.
+  getUploadOffset(uploadId: string): Observable<{ uploadId: string; offset: number; totalSize: number }> {
+    return this.http.get<{ uploadId: string; offset: number; totalSize: number }>(
+      `${this.baseUrl}/photos/uploads/${uploadId}`);
+  }
+
+  appendChunk(uploadId: string, offset: number, chunk: Blob): Observable<{ offset: number }> {
+    return this.http.post<{ offset: number }>(
+      `${this.baseUrl}/photos/uploads/${uploadId}/chunk?offset=${offset}`,
+      chunk,
+      { headers: { 'Content-Type': 'application/octet-stream' } });
+  }
+
+  completeUpload(uploadId: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/photos/uploads/${uploadId}/complete`, null);
+  }
+
+  abandonUpload(uploadId: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/photos/uploads/${uploadId}`);
   }
 
   getPhotos(eventId: string): Observable<any[]> {

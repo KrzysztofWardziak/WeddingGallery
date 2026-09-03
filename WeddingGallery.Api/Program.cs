@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.StaticFiles;
+using WeddingGallery.Api.BackgroundServices;
 using Microsoft.EntityFrameworkCore;
 using WeddingGallery.Application.Interfaces;
 using WeddingGallery.Application.Media;
@@ -45,6 +46,16 @@ builder.Services.AddSingleton<IThumbnailGenerator, FfmpegThumbnailGenerator>();
 // mounts the data volume onto.
 builder.Services.AddSingleton(new PhotoStorageOptions(
     Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "photos")));
+
+builder.Services.AddScoped<IChunkedUploadService, ChunkedUploadService>();
+builder.Services.AddHostedService<AbandonedUploadSweeper>();
+
+// Deliberately outside wwwroot: UseStaticFiles serves everything under wwwroot/photos, which
+// would make a half-received file publicly fetchable under a name the uploader chose, before
+// validation has finished. docker-compose mounts this path onto the data volume so a 500 MB
+// partial file never lands on the container's writable layer.
+builder.Services.AddSingleton(new ChunkedUploadStorageOptions(
+    Path.Combine(builder.Environment.ContentRootPath, "uploads-tmp")));
 
 // In production the SPA is served from the same origin, so the list is empty and no CORS
 // headers are emitted at all. Development keeps ng serve on localhost:4200.

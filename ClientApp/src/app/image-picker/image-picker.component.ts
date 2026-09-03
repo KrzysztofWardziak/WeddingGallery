@@ -3,31 +3,39 @@ import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
-import { from, of } from 'rxjs';
-import { catchError, finalize, map, mergeMap, tap, timeout } from 'rxjs/operators';
-import { ApiService } from '../services/api.service';
+import { firstValueFrom } from 'rxjs';
+import { timeout } from 'rxjs/operators';
+import { ApiService, UploadSession } from '../services/api.service';
 
 interface SelectedMedia {
   file: File;
   previewUrl: string;
   isVideo: boolean;
   failed: boolean;
+  // Bytes the server has acknowledged for this file, so the progress bar can be rebuilt
+  // exactly after a partial failure instead of drifting.
+  sentBytes: number;
+  // Present only while a chunked upload for this file is unfinished; a retry resumes it.
+  session?: UploadSession;
 }
 
 // Guests are on venue wifi or LTE, where dozens of parallel connections lower
 // real throughput and cause timeouts. Three at a time is the compromise.
 const MAX_PARALLEL_UPLOADS = 3;
 
-// A stalled request on venue wifi must not trap the guest with a frozen
-// progress bar and no way out; a hang becomes a normal failure that the
-// existing retry path already handles. Videos are far larger than photos, so the
-// window has to be wide enough for a 90 MB clip on a slow uplink.
-const UPLOAD_TIMEOUT_MS = 300000;
+// Below this, a single request is cheaper than three round trips. A 4 MB photo has no
+// business paying for an init, a chunk and a completion.
+const CHUNK_THRESHOLD_BYTES = 20 * 1024 * 1024;
 
-// Mirrors MediaFileValidator.MaxFileBytes on the server, which in turn is set by
-// Cloudflare's 100 MB request limit on the free plan. Rejecting here saves the guest
-// from watching a long upload fail; the server check is the one that actually enforces it.
-const MAX_FILE_BYTES = 95 * 1024 * 1024;
+// Per-file cap. Cloudflare stopped being the constraint once uploads are chunked, so this
+// is purely about not letting one guest fill the server's disk. Mirrors
+// ChunkedUploadService.MaxFileBytes.
+const MAX_FILE_BYTES = 500 * 1024 * 1024;
+
+// A stalled request must not trap the guest with a frozen bar and no way out; a hang
+// becomes a normal failure that the retry path already handles.
+const SMALL_UPLOAD_TIMEOUT_MS = 120000;
+const CHUNK_TIMEOUT_MS = 180000;
 
 @Component({
   selector: 'app-image-picker',
@@ -42,13 +50,15 @@ export class ImagePickerComponent implements OnDestroy {
   photos: SelectedMedia[] = [];
   eventId = localStorage.getItem('guest_event_id') || '';
   isUploading = false;
-  attemptedCount = 0;
   savedCount = 0;
   totalCount = 0;
   failedCount = 0;
 
-  // Files turned away before any upload started (too large), and the last message the
-  // server gave for a rejected file. Both are shown to the guest so a refusal is never silent.
+  // Progress is measured in bytes, not files. A single 500 MB video would leave a
+  // file-counting bar frozen for minutes, which reads as a hang and invites a force-quit.
+  sentBytes = 0;
+  totalBytes = 0;
+
   rejectedMessages: string[] = [];
   serverErrorMessage: string | null = null;
 
@@ -65,6 +75,11 @@ export class ImagePickerComponent implements OnDestroy {
     this.photos.forEach(photo => URL.revokeObjectURL(photo.previewUrl));
   }
 
+  get progressPercent(): number {
+    if (!this.totalBytes) return 0;
+    return Math.min(100, Math.round((this.sentBytes / this.totalBytes) * 100));
+  }
+
   triggerFileInput() {
     this.fileInput.nativeElement.click();
   }
@@ -79,12 +94,9 @@ export class ImagePickerComponent implements OnDestroy {
       if (file.size > MAX_FILE_BYTES) {
         const sizeMb = Math.round(file.size / (1024 * 1024));
         const limitMb = Math.round(MAX_FILE_BYTES / (1024 * 1024));
-        // Deliberately no promised duration: how much fits depends entirely on the camera
-        // mode. 4K/60 burns the whole allowance in about 15 seconds, so telling every guest
-        // "about a minute" was wrong for most modern phones.
         this.rejectedMessages.push(
           `${file.name} (${sizeMb} MB) przekracza limit ${limitMb} MB. Nagraj krótszy film ` +
-          `albo przełącz aparat na 1080p — w 4K limit kończy się już po kilkunastu sekundach.`);
+          `albo przełącz aparat na 1080p.`);
         continue;
       }
 
@@ -96,7 +108,8 @@ export class ImagePickerComponent implements OnDestroy {
         file,
         previewUrl: URL.createObjectURL(file),
         isVideo: file.type.startsWith('video/'),
-        failed: false
+        failed: false,
+        sentBytes: 0
       });
     }
 
@@ -104,12 +117,19 @@ export class ImagePickerComponent implements OnDestroy {
   }
 
   removePhoto(index: number) {
-    URL.revokeObjectURL(this.photos[index].previewUrl);
-    this.succeeded.delete(this.photos[index]);
+    const media = this.photos[index];
+    URL.revokeObjectURL(media.previewUrl);
+
+    // Tell the server to drop the partial file now rather than leaving it for the sweeper.
+    if (media.session) {
+      this.apiService.abandonUpload(media.session.uploadId).subscribe({ error: () => {} });
+    }
+
+    this.succeeded.delete(media);
     this.photos.splice(index, 1);
   }
 
-  uploadFiles() {
+  async uploadFiles() {
     // The name is optional; only the files are required.
     if (this.photos.length === 0 || this.isUploading) return;
 
@@ -117,51 +137,123 @@ export class ImagePickerComponent implements OnDestroy {
 
     const queue = this.photos.filter(photo => !this.succeeded.has(photo));
     this.isUploading = true;
-    this.attemptedCount = 0;
     this.savedCount = 0;
     this.failedCount = 0;
     this.serverErrorMessage = null;
     this.rejectedMessages = [];
     this.totalCount = queue.length;
-    queue.forEach(photo => (photo.failed = false));
+    this.totalBytes = queue.reduce((sum, photo) => sum + photo.file.size, 0);
+    this.sentBytes = 0;
+    queue.forEach(photo => {
+      photo.failed = false;
+      photo.sentBytes = 0;
+    });
 
-    from(queue).pipe(
-      mergeMap(photo =>
-        this.apiService.uploadMedia(this.eventId, this.guestName, photo.file).pipe(
-          timeout(UPLOAD_TIMEOUT_MS),
-          map(() => ({ photo, ok: true })),
-          // One failed file must not abort the rest; collect it for a retry.
-          catchError(error => {
-            this.rememberServerError(error);
-            return of({ photo, ok: false });
-          })
-        ),
-        MAX_PARALLEL_UPLOADS
-      ),
-      tap(result => {
-        // The bar advances on every completed attempt (honest progress), but the
-        // number shown to the guest must only count files actually saved.
-        this.attemptedCount++;
-        if (result.ok) {
-          this.savedCount++;
-          this.succeeded.add(result.photo);
-        } else {
-          result.photo.failed = true;
-          this.failedCount++;
-        }
-      }),
-      finalize(() => (this.isUploading = false))
-    ).subscribe({
-      complete: () => {
-        if (this.failedCount === 0) {
-          this.router.navigate(['/feed']);
-        }
+    await this.runWithConcurrency(queue, MAX_PARALLEL_UPLOADS, async media => {
+      try {
+        await this.uploadOne(media);
+        this.succeeded.add(media);
+        this.savedCount++;
+      } catch (error) {
+        // One failed file must not abort the rest; it stays queued for a retry.
+        media.failed = true;
+        this.failedCount++;
+        this.rememberServerError(error);
       }
     });
+
+    this.isUploading = false;
+
+    if (this.failedCount === 0) {
+      this.router.navigate(['/feed']);
+    }
   }
 
   goToFeed() {
     this.router.navigate(['/feed']);
+  }
+
+  private async uploadOne(media: SelectedMedia) {
+    if (media.file.size <= CHUNK_THRESHOLD_BYTES) {
+      await firstValueFrom(
+        this.apiService.uploadMedia(this.eventId, this.guestName, media.file)
+          .pipe(timeout(SMALL_UPLOAD_TIMEOUT_MS)));
+      this.creditBytesTo(media, media.file.size);
+      return;
+    }
+
+    await this.uploadChunked(media);
+  }
+
+  private async uploadChunked(media: SelectedMedia) {
+    const session = await this.openOrResumeSession(media);
+    let offset = session.offset;
+    this.creditBytesTo(media, offset);
+
+    while (offset < media.file.size) {
+      const end = Math.min(offset + session.chunkSize, media.file.size);
+      const chunk = media.file.slice(offset, end);
+
+      try {
+        const result = await firstValueFrom(
+          this.apiService.appendChunk(session.uploadId, offset, chunk).pipe(timeout(CHUNK_TIMEOUT_MS)));
+        offset = result.offset;
+      } catch (error) {
+        // 409 means the server disagrees about where we are - usually a chunk that landed
+        // while the response was lost. It reports the truth; continue from there.
+        if (error instanceof HttpErrorResponse && error.status === 409 && typeof error.error?.offset === 'number') {
+          offset = error.error.offset;
+          this.creditBytesTo(media, offset);
+          continue;
+        }
+        throw error;
+      }
+
+      this.creditBytesTo(media, offset);
+    }
+
+    await firstValueFrom(this.apiService.completeUpload(session.uploadId));
+    media.session = undefined;
+  }
+
+  private async openOrResumeSession(media: SelectedMedia): Promise<UploadSession> {
+    if (media.session) {
+      try {
+        const state = await firstValueFrom(this.apiService.getUploadOffset(media.session.uploadId));
+        media.session = { ...media.session, offset: state.offset };
+        return media.session;
+      } catch (error) {
+        // The session expired or was swept; fall through and open a fresh one rather than
+        // failing an upload the guest can still complete.
+        if (!(error instanceof HttpErrorResponse) || error.status !== 404) {
+          throw error;
+        }
+        media.session = undefined;
+        media.sentBytes = 0;
+      }
+    }
+
+    const session = await firstValueFrom(
+      this.apiService.startUpload(this.eventId, this.guestName, media.file));
+    media.session = session;
+    return session;
+  }
+
+  // Credits an absolute per-file offset, so the shared total cannot drift when a chunk is
+  // retried or the server corrects our position.
+  private creditBytesTo(media: SelectedMedia, absoluteOffset: number) {
+    this.sentBytes += absoluteOffset - media.sentBytes;
+    media.sentBytes = absoluteOffset;
+  }
+
+  private async runWithConcurrency<T>(items: T[], limit: number, worker: (item: T) => Promise<void>) {
+    const pending = [...items];
+    const runners = Array.from({ length: Math.min(limit, pending.length) }, async () => {
+      while (pending.length > 0) {
+        await worker(pending.shift()!);
+      }
+    });
+    await Promise.all(runners);
   }
 
   // A 400 carries a message written for the guest (wrong format, file too large). Anything

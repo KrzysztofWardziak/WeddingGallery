@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using WeddingGallery.Application.Interfaces;
 using WeddingGallery.Application.Media;
+using WeddingGallery.Application.Services;
 
 namespace WeddingGallery.Api.Controllers
 {
@@ -9,11 +10,16 @@ namespace WeddingGallery.Api.Controllers
     public class PhotosController : AdminAuthorizedControllerBase
     {
         private readonly IPhotoService _photoService;
+        private readonly IChunkedUploadService _chunkedUploadService;
 
-        public PhotosController(IPhotoService photoService, IConfiguration configuration)
+        public PhotosController(
+            IPhotoService photoService,
+            IChunkedUploadService chunkedUploadService,
+            IConfiguration configuration)
             : base(configuration)
         {
             _photoService = photoService;
+            _chunkedUploadService = chunkedUploadService;
         }
 
         [HttpGet("event/{eventId}")]
@@ -62,6 +68,99 @@ namespace WeddingGallery.Api.Controllers
                 // The message is written for the guest and is shown verbatim in the picker.
                 return BadRequest(ex.Message);
             }
+        }
+
+        public class StartUploadRequest
+        {
+            public Guid EventId { get; set; }
+            public string? UploaderName { get; set; }
+            public string FileName { get; set; } = string.Empty;
+            public long TotalSize { get; set; }
+        }
+
+        // Chunked upload. Cloudflare caps a request body at 100 MB and the tunnel is the only
+        // route in, so a large video has to arrive across several requests instead of one.
+        [HttpPost("uploads")]
+        public async Task<IActionResult> StartUpload([FromBody] StartUploadRequest request)
+        {
+            try
+            {
+                var session = await _chunkedUploadService.StartAsync(
+                    request.EventId, request.UploaderName, request.FileName, request.TotalSize);
+
+                return Ok(new
+                {
+                    uploadId = session.Id,
+                    offset = session.Offset,
+                    chunkSize = ChunkedUploadService.ChunkSizeBytes
+                });
+            }
+            catch (InvalidMediaFileException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        // The resume primitive: the client asks where it got to and continues from there.
+        [HttpGet("uploads/{uploadId}")]
+        public async Task<IActionResult> GetUpload(Guid uploadId)
+        {
+            var session = await _chunkedUploadService.GetAsync(uploadId);
+            if (session is null) return NotFound();
+
+            return Ok(new { uploadId = session.Id, offset = session.Offset, totalSize = session.TotalSize });
+        }
+
+        [HttpPost("uploads/{uploadId}/chunk")]
+        public async Task<IActionResult> AppendChunk(Guid uploadId, [FromQuery] long offset)
+        {
+            try
+            {
+                // Streamed straight from the request body to the partial file; a 25 MB chunk
+                // never needs to sit in memory.
+                var newOffset = await _chunkedUploadService.AppendAsync(uploadId, offset, Request.Body);
+                return Ok(new { offset = newOffset });
+            }
+            catch (UploadSessionNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (UploadOffsetMismatchException ex)
+            {
+                // 409 carries the true offset so the client corrects itself rather than
+                // restarting the file or corrupting it.
+                return Conflict(new { offset = ex.ActualOffset });
+            }
+            catch (InvalidMediaFileException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        [HttpPost("uploads/{uploadId}/complete")]
+        public async Task<IActionResult> CompleteUpload(Guid uploadId)
+        {
+            try
+            {
+                var photo = await _chunkedUploadService.CompleteAsync(uploadId);
+                return Ok(new { id = photo.Id, url = photo.OriginalPath, mediaType = photo.MediaType });
+            }
+            catch (UploadSessionNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (IncompleteUploadException ex)
+            {
+                // Session preserved: the guest resumes the missing bytes.
+                return BadRequest(new { received = ex.Received, expected = ex.Expected });
+            }
+        }
+
+        [HttpDelete("uploads/{uploadId}")]
+        public async Task<IActionResult> AbandonUpload(Guid uploadId)
+        {
+            await _chunkedUploadService.AbandonAsync(uploadId);
+            return NoContent();
         }
     }
 }
