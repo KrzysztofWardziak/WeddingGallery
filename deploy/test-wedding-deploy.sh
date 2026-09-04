@@ -62,6 +62,10 @@ tag_at "$first"
 check "deploy exits 0" "$(run_agent)" "0"
 check "deploy built" "$(grep -c 'compose build' "$WORK/docker.log")" "1"
 check "deploy started" "$(grep -c 'compose up -d' "$WORK/docker.log")" "1"
+check "deploy validated the compose file" "$(grep -c 'compose config -q' "$WORK/docker.log")" "1"
+check "config precedes build" \
+  "$(grep -n 'compose config\|compose build' "$WORK/docker.log" | head -1 | grep -c config)" "1"
+check "deploy prunes dangling images" "$(grep -c 'image prune -f' "$WORK/docker.log")" "1"
 check "build precedes up" \
   "$(grep -n 'compose build\|compose up' "$WORK/docker.log" | head -1 | grep -c build)" "1"
 check "records deployed commit" "$(cat "$STATE/deployed-commit")" "$first"
@@ -109,6 +113,42 @@ check "failed up leaves deployed commit unchanged" "$(cat "$STATE/deployed-commi
 : > "$WORK/docker.log"
 check "up retried exits non-zero" "$(run_agent)" "1"
 check "up retried invokes docker again" "$(grep -c 'compose up -d' "$WORK/docker.log")" "1"
+check "second up failure still not recorded" "$(cat "$STATE/failed-commit" 2>/dev/null)" "$second"
+check "up failures counted" "$(cat "$STATE/up-failures")" "$third 2"
+
+# 8. Deploys held: the sentinel file stops everything before any state is read or written.
+# Slotted in mid-retry precisely to prove it touches nothing on its way out.
+: > "$WORK/docker.log"
+touch "$STATE/HOLD"
+check "held deploy exits 0" "$(run_agent)" "0"
+check "held deploy invokes no docker" "$(wc -l < "$WORK/docker.log" | tr -d ' ')" "0"
+check "held deploy says so" "$(grep -c 'held' "$WORK/out.txt")" "1"
+check "held deploy leaves deployed commit" "$(cat "$STATE/deployed-commit")" "$first"
+check "held deploy leaves failed commit" "$(cat "$STATE/failed-commit")" "$second"
+check "held deploy leaves the up-failure count" "$(cat "$STATE/up-failures")" "$third 2"
+rm -f "$STATE/HOLD"
+
+# 9. Third consecutive `up -d` failure on the same target: bounded. Retrying forever would
+# stop and recreate the containers every two minutes, so now it is recorded as failed.
+: > "$WORK/docker.log"
+check "third up failure exits non-zero" "$(run_agent)" "1"
+check "third up failure records failed commit" "$(cat "$STATE/failed-commit")" "$third"
+check "third up failure leaves deployed commit unchanged" "$(cat "$STATE/deployed-commit")" "$first"
+unset FAIL_ON
+
+# 10. `docker compose config` fails: treated exactly like a build failure.
+echo four > file.txt && git -C "$WORK/app" commit -qam four
+fourth="$(git -C "$WORK/app" rev-parse HEAD)"
+git -C "$WORK/app" push -q origin HEAD:master
+tag_at "$fourth"
+: > "$WORK/docker.log"
+FAIL_ON=config
+export FAIL_ON
+check "invalid compose exits non-zero" "$(run_agent)" "1"
+check "invalid compose never builds" "$(grep -c 'compose build' "$WORK/docker.log")" "0"
+check "invalid compose never starts containers" "$(grep -c 'compose up' "$WORK/docker.log")" "0"
+check "invalid compose records failed commit" "$(cat "$STATE/failed-commit")" "$fourth"
+check "invalid compose leaves deployed commit unchanged" "$(cat "$STATE/deployed-commit")" "$first"
 unset FAIL_ON
 
 echo

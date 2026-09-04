@@ -1,5 +1,6 @@
 .env
 .env.example
+ci.env
 .git
 .gitignore
 .vs
@@ -13,3 +14,4 @@ ClientApp/dist
 docs/
 *.pdf
 *.md
+data/

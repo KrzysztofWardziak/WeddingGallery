@@ -29,7 +29,16 @@ jobs:
         env:
           REF: ${{ inputs.ref }}
         run: |
-          sha="$(git rev-parse "${REF}^{commit}")"
+          # checkout@v4 fetches branches into refs/remotes/origin/* and only creates
+          # a local branch for the dispatched ref, so a plain branch name (including
+          # the default) does not resolve on its own. Resolve origin/ first, then the
+          # literal ref, which covers SHAs and tags.
+          if ! sha="$(git rev-parse --verify --quiet "origin/${REF}^{commit}")"; then
+            if ! sha="$(git rev-parse --verify --quiet "${REF}^{commit}")"; then
+              echo "Could not resolve ref '${REF}' to a commit (tried origin/${REF} and ${REF})." >&2
+              exit 1
+            fi
+          fi
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
           echo "Deploying ${sha} (from ${REF})"
 

@@ -111,6 +111,10 @@ disagreeing, with nothing reporting it.
 
 Each run:
 
+0. `/srv/wedding/HOLD` exists - log that deploys are held and exit 0, before the fetch and
+   before any state is read. The event-day freeze: during the reception a bad deploy is
+   unrecoverable, and the timer otherwise converges every two minutes including after a
+   reboot. A file survives a reboot where `systemctl stop` on an enabled timer does not.
 1. `git fetch --tags --force --prune`
 2. No `production` tag yet - exit quietly. This is the state before the first deploy and
    must not look like a failure.
@@ -119,9 +123,23 @@ Each run:
    broken commit must not rebuild every two minutes forever, filling the journal and
    loading the machine. Retrying means moving the tag again, or deleting that file; both
    are in the runbook.
-5. Otherwise: check out the commit detached, `docker compose build`, then `docker compose
-   up -d`. On success record `deployed-commit` and clear `failed-commit`; on failure record
-   `failed-commit` and exit non-zero so the unit shows as failed.
+5. Otherwise: check out the commit detached, `docker compose config -q`, `docker compose
+   build`, then `docker compose up -d`. On success record `deployed-commit`, clear
+   `failed-commit`, and `docker image prune -f` (guarded - a prune failure is housekeeping,
+   not a failed deploy); on failure record `failed-commit` and exit non-zero so the unit
+   shows as failed.
+
+`config -q` runs before `build` because a `docker-compose.yml` broken in a way `build` does
+not notice would otherwise only surface at `up -d`, which can leave the gallery down. Like a
+build failure it changes nothing that is currently serving, so it is recorded the same way.
+
+**A failing `up -d` is retried, but only three times.** It is not recorded as
+`failed-commit` immediately, because its causes (port contention, a slow volume, an OOM
+during recreation) are often transient and the stack may now be half-started. But each
+retry can stop and recreate containers, so an unstartable commit would cycle the gallery
+every two minutes forever. Consecutive failures for the same target are counted in
+`/srv/wedding/up-failures`; the third records `failed-commit` and stops exactly as a build
+failure would. The counter resets on success and whenever the target changes.
 
 The checkout uses `--force`, which discards local edits to **tracked** files. Untracked and
 ignored files are untouched, so the server's `.env` is safe. Without it, one stray local
@@ -153,6 +171,13 @@ an explicit `-f`.
   only place that says so is the journal.
 - **No health check.** A deploy that builds and starts but serves errors looks identical to
   a good one.
+- **No database rollback.** `Program.cs` runs `db.Database.Migrate()` on every start and EF
+  Core never downgrades a schema, so deploying an older SHA rolls back the code and leaves
+  the database where the newer code left it. Rollback is therefore safe only between
+  commits with no migration between them; crossing a migration backwards is not supported
+  and needs a restore from a `pg_dump` (`AddMediaType` and `AddEventDate` are exactly that
+  shape). The precaution is a dump taken *before* any deploy that carries a migration -
+  the runbook's rollback section says so and points at its backup section for the command.
 
 ## Testing
 
@@ -171,8 +196,15 @@ an explicit `-f`.
 - Anyone with write access to the repository can move the tag, and therefore deploy. That
   is the same authority as pushing to master, so it adds no new exposure - but it is now a
   single click.
-- A deploy whose `docker-compose.yml` is broken in a way `build` does not catch will still
-  be applied; only `up -d` will fail, and the gallery stays down until someone looks.
-- The agent runs as whichever user owns the timer and must be able to drive Docker. That
-  user effectively holds root on the host, which is inherent to Docker rather than to this
-  design, but worth stating plainly.
+- A deploy whose `docker-compose.yml` is broken in a way neither `config -q` nor `build`
+  catches will still be applied; only `up -d` will fail, and after three attempts the agent
+  stops and the gallery stays down until someone looks.
+- The agent runs as root. It must be able to drive Docker, and any user that can do so
+  effectively holds root on the host anyway, so a dedicated service user in the `docker`
+  group would buy nothing. Two consequences: git refuses the operator-owned clone as
+  "dubious ownership" until the install step adds a global `safe.directory`, and after the
+  first run the clone contains root-owned git objects, so the manual fallback has to be run
+  as root too. Both are in the runbook.
+- A hung build would block every future deploy, because systemd will not start a unit that
+  is still active. `TimeoutStartSec=2700s` (45 minutes) bounds it: comfortably more than a
+  cold .NET plus Angular build on this machine, but not forever.

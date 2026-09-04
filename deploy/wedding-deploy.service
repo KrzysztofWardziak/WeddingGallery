@@ -8,3 +8,16 @@ Type=oneshot
 # Installed copy, not the one in the working tree: running it in place would have the
 # script executing a file its own git checkout is replacing underneath it.
 ExecStart=/usr/local/bin/wedding-deploy
+
+# No User= on purpose: this runs as root. Root already drives Docker on this host, and a
+# dedicated service user would need adding to the docker group - which grants root on the
+# host anyway - for no gain. The consequence is that git sees a clone owned by the
+# operator and refuses it as "dubious ownership" until the install step marks it safe:
+#   sudo git config --global --add safe.directory /srv/wedding/app
+# It also means root-owned git objects appear in that clone; see section 6 of the runbook.
+
+# A hung build must not block every future deploy forever, but it must not be killed
+# mid-build either. A cold build of the .NET API and the Angular client on this home
+# server takes on the order of ten minutes; 45 minutes leaves room for a cold Docker
+# cache, a slow mirror and a loaded machine, and still eventually gives up.
+TimeoutStartSec=2700s
