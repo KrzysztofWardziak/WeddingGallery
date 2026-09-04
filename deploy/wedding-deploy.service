@@ -1,0 +1,10 @@
+[Unit]
+Description=Converge Wedding Gallery onto the production tag
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Installed copy, not the one in the working tree: running it in place would have the
+# script executing a file its own git checkout is replacing underneath it.
+ExecStart=/usr/local/bin/wedding-deploy

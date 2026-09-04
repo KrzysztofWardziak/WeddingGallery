@@ -1,0 +1,10 @@
+[Unit]
+Description=Check every two minutes for a new Wedding Gallery deployment
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Unit=wedding-deploy.service
+
+[Install]
+WantedBy=timers.target
