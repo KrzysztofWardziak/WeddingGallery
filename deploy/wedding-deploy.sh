@@ -38,12 +38,21 @@ fi
 
 echo "Deploying ${target} (was ${deployed:-unknown})"
 
+# Records a commit as failed so the "one attempt per tag move" rule above actually holds.
+# A silent failure to write this file would look identical to success and the broken
+# commit would be rebuilt every tick forever, so the write itself is checked here.
+record_failed() {
+  if ! { mkdir -p "$STATE_DIR" && echo "$1" > "$FAILED_FILE"; }; then
+    echo "Could not record failed commit to ${FAILED_FILE}; it may be retried next tick." >&2
+  fi
+}
+
 # --force discards local edits to tracked files, which would otherwise wedge every future
 # deploy. Untracked and ignored files are untouched, so the server's .env is safe. There is
 # deliberately no `git clean` anywhere in this script.
 if ! git checkout --detach --force "$target"; then
   echo "Checkout failed"
-  mkdir -p "$STATE_DIR" && echo "$target" > "$FAILED_FILE"
+  record_failed "$target"
   exit 1
 fi
 
@@ -51,17 +60,23 @@ fi
 # currently serving. Only once it succeeds do we restart anything.
 if ! docker compose build; then
   echo "Build failed; leaving the running containers alone."
-  mkdir -p "$STATE_DIR" && echo "$target" > "$FAILED_FILE"
+  record_failed "$target"
   exit 1
 fi
 
+# up failing is different from build failing: build failing means the code is broken and
+# retrying cannot help, but up failing (port contention, a slow volume, an OOM during
+# recreation) can be transient and the stack may now be half-started or down. We do NOT
+# record this commit as failed-commit, so the next tick retries the same target instead of
+# waiting for a human to delete the failure marker.
 if ! docker compose up -d; then
-  echo "Start failed."
-  mkdir -p "$STATE_DIR" && echo "$target" > "$FAILED_FILE"
+  echo "Start failed; will retry next tick."
   exit 1
 fi
 
-mkdir -p "$STATE_DIR"
-echo "$target" > "$DEPLOYED_FILE"
+if ! { mkdir -p "$STATE_DIR" && echo "$target" > "$DEPLOYED_FILE"; }; then
+  echo "Deploy succeeded but could not record deployed commit to ${DEPLOYED_FILE}." >&2
+  exit 1
+fi
 rm -f "$FAILED_FILE"
 echo "Deployed ${target}."

@@ -27,6 +27,10 @@ echo two > file.txt && git commit -qam two
 second="$(git rev-parse HEAD)"
 git push -q origin HEAD:master
 
+# Untracked file (stands in for the server's real .env), created once and never committed.
+# `checkout --force` must never touch it.
+echo "SECRET=keepme" > .env
+
 # Stub docker: records every invocation, and fails when FAIL_ON matches the subcommand.
 mkdir -p "$WORK/bin"
 cat > "$WORK/bin/docker" <<'STUB'
@@ -62,6 +66,7 @@ check "build precedes up" \
   "$(grep -n 'compose build\|compose up' "$WORK/docker.log" | head -1 | grep -c build)" "1"
 check "records deployed commit" "$(cat "$STATE/deployed-commit")" "$first"
 check "checked out the commit" "$(git -C "$WORK/app" rev-parse HEAD)" "$first"
+check "untracked .env survives checkout --force" "$(cat "$WORK/app/.env" 2>/dev/null)" "SECRET=keepme"
 
 # 3. Same tag again: nothing happens.
 : > "$WORK/docker.log"
@@ -82,6 +87,28 @@ check "deployed commit unchanged" "$(cat "$STATE/deployed-commit")" "$first"
 : > "$WORK/docker.log"
 check "known failure exits 0" "$(run_agent)" "0"
 check "known failure does not rebuild" "$(wc -l < "$WORK/docker.log" | tr -d ' ')" "0"
+unset FAIL_ON
+
+# 6. `up -d` fails: non-zero, but this is transient (port contention, OOM, a slow volume),
+# so unlike a build failure it must NOT be recorded as failed-commit, and the next tick
+# must retry the same target rather than skipping it.
+echo three > file.txt && git -C "$WORK/app" commit -qam three
+third="$(git -C "$WORK/app" rev-parse HEAD)"
+git -C "$WORK/app" push -q origin HEAD:master
+tag_at "$third"
+: > "$WORK/docker.log"
+FAIL_ON=up
+export FAIL_ON
+check "failed up exits non-zero" "$(run_agent)" "1"
+check "failed up still builds" "$(grep -c 'compose build' "$WORK/docker.log")" "1"
+check "failed up attempts start" "$(grep -c 'compose up -d' "$WORK/docker.log")" "1"
+check "failed up does not record failed commit" "$(cat "$STATE/failed-commit" 2>/dev/null)" "$second"
+check "failed up leaves deployed commit unchanged" "$(cat "$STATE/deployed-commit")" "$first"
+
+# 7. Next tick after a failed `up`: retried, not skipped.
+: > "$WORK/docker.log"
+check "up retried exits non-zero" "$(run_agent)" "1"
+check "up retried invokes docker again" "$(grep -c 'compose up -d' "$WORK/docker.log")" "1"
 unset FAIL_ON
 
 echo
