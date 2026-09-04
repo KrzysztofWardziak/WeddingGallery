@@ -275,12 +275,19 @@ Przejdź po kolei przez poniższe punkty:
 
 ## 6. Aktualizacja aplikacji
 
+Od wprowadzenia CI/CD wdrożenia robi się przyciskiem w GitHubie — patrz sekcja 11.
+Ręczna ścieżka opisana niżej pozostaje ważna i jest awaryjnym wyjściem, gdy agent nie
+działa.
+
 ```bash
 cd /srv/wedding/app
-git pull
-docker compose up -d --build
-docker compose logs -f api
+git fetch --tags --force origin
+git checkout --detach --force production
+docker compose build && docker compose up -d
 ```
+
+Kolejność ma znaczenie: `build` nie rusza działających kontenerów, więc nieudana
+kompilacja nie kładzie galerii. Dopiero `up -d` restartuje.
 
 Migracje EF Core są stosowane automatycznie przy starcie kontenera `api`
 (`db.Database.Migrate()` w `Program.cs`), więc nie trzeba uruchamiać ich ręcznie.
@@ -509,3 +516,79 @@ Skrócony plan zmian — pełne uzasadnienie architektoniczne obu wariantów jes
    i przełącz tam rekordy `@`/`www` w tryb **DNS only** (szara chmurka) zamiast
    proxy, żeby ruch szedł bezpośrednio do serwera z pominięciem tunelu.
 5. Usuń z Zero Trust tunel, który przestał być używany.
+
+## 11. Automatyczne wdrożenia (CI/CD)
+
+Serwer jest za DS-Lite, więc GitHub nie ma jak się do niego połączyć. Wdrożenie jest
+odwrócone: przycisk w GitHubie przestawia tag `production`, a timer na serwerze co dwie
+minuty sam się do niego zbiega.
+
+### Instalacja agenta (jednorazowa)
+
+```bash
+cd /srv/wedding/app
+sudo install -m 755 deploy/wedding-deploy.sh /usr/local/bin/wedding-deploy
+sudo install -m 644 deploy/wedding-deploy.service /etc/systemd/system/
+sudo install -m 644 deploy/wedding-deploy.timer /etc/systemd/system/
+sudo systemd-analyze verify /etc/systemd/system/wedding-deploy.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now wedding-deploy.timer
+```
+
+Skrypt i pliki jednostek są **kopiowane** z repozytorium. Zmiana któregokolwiek z nich
+wymaga powtórzenia tych komend — agent nie aktualizuje się sam, bo nie może wykonywać
+pliku, który jego własny `git checkout` podmienia mu pod nogami.
+
+### Wdrożenie
+
+Actions → Deploy → Run workflow → podaj commit, gałąź lub tag (domyślnie `master`).
+W ciągu dwóch minut serwer się przełączy.
+
+### Cofnięcie
+
+Ten sam przycisk ze starszym SHA. To jedyny mechanizm — nie ma osobnej procedury awaryjnej.
+
+### Co się dzieje i czy się udało
+
+```bash
+systemctl status wedding-deploy.timer
+journalctl -u wedding-deploy -n 50 --no-pager
+cat /srv/wedding/deployed-commit
+```
+
+**Przycisk w GitHubie zapala się na zielono, gdy tag się przestawi — nie gdy wdrożenie
+się uda.** Prawda jest tylko w journalu.
+
+### Nieudane wdrożenie
+
+Agent próbuje **raz na przestawienie tagu**. Po porażce checkout albo `docker compose
+build` zapisuje commit i przestaje, żeby nie przebudowywać co dwie minuty w kółko:
+
+```bash
+cat /srv/wedding/failed-commit
+```
+
+Ponowna próba tego samego commita:
+
+```bash
+sudo rm /srv/wedding/failed-commit
+```
+
+Nieudany `build` **nie rusza działających kontenerów** — galeria dalej chodzi na starym
+kodzie, a commit trafia do `failed-commit` i nie jest ponawiany automatycznie. Nieudane
+`up -d` jest traktowane inaczej: ten commit **nie** trafia do `failed-commit`, bo stos
+może zostać w stanie połowicznie uruchomionym, a przyczyny (zajęty port, wolny wolumen,
+chwilowy OOM przy odtwarzaniu kontenera) bywają przejściowe — kolejny tick spróbuje tego
+samego commita ponownie bez interwencji człowieka. Warto wtedy zajrzeć od razu do
+journala.
+
+### Ręczne wdrożenie (awaryjnie)
+
+Gdy agent nie działa:
+
+```bash
+cd /srv/wedding/app
+git fetch --tags --force origin
+git checkout --detach --force production
+docker compose build && docker compose up -d
+```
