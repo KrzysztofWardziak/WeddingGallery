@@ -34,7 +34,7 @@ if ! git fetch --tags --force --prune origin; then
   # The agent runs as root while the clone is owned by the operator, so the usual cause is
   # git refusing to touch a repository it considers foreign.
   echo "Hint: if the message above says 'detected dubious ownership', run:" >&2
-  echo "      sudo git config --global --add safe.directory ${APP_DIR}" >&2
+  echo "      sudo git config --system --add safe.directory ${APP_DIR}" >&2
   exit 1
 fi
 

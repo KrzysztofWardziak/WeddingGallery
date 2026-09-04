@@ -548,7 +548,7 @@ sudo install -m 755 deploy/wedding-deploy.sh /usr/local/bin/wedding-deploy
 sudo install -m 644 deploy/wedding-deploy.service /etc/systemd/system/
 sudo install -m 644 deploy/wedding-deploy.timer /etc/systemd/system/
 sudo systemd-analyze verify /etc/systemd/system/wedding-deploy.service
-sudo git config --global --add safe.directory /srv/wedding/app
+sudo git config --system --add safe.directory /srv/wedding/app
 sudo systemctl daemon-reload
 sudo systemctl enable --now wedding-deploy.timer
 ```
@@ -558,9 +558,20 @@ sudo systemctl enable --now wedding-deploy.timer
 jakiejkolwiek operacji w repozytorium należącym do innego użytkownika i przerywa z
 komunikatem `fatal: detected dubious ownership in repository`. Bez tej komendy
 pierwszy `git fetch` agenta kończy się błędem, agent wychodzi z kodem 1 bez zapisania
-stanu i powtarza to samo co dwie minuty, nie wdrażając nigdy niczego. Komenda musi
-być wykonana przez `sudo` (konfiguracja globalna **roota**, nie `krisa`) i przed
-włączeniem timera.
+stanu i powtarza to samo co dwie minuty, nie wdrażając nigdy niczego. Zapis idzie do **konfiguracji systemowej** (`/etc/gitconfig`), nie globalnej. To nie jest
+detal: `sudo git config --global` zależnie od ustawień `sudoers` zachowuje `$HOME`
+użytkownika wywołującego, więc zapisuje do `/home/kris/.gitconfig`, którego `root` nie
+czyta — komenda kończy się sukcesem, a agent dalej pada na `dubious ownership`. Ta pułapka
+zablokowała pierwsze uruchomienie na tym serwerze. `--system` obowiązuje każdego
+użytkownika, w tym `root`, i nie zależy od tego, co `sudo` zrobi z `$HOME`. Sprawdź, że
+zapis rzeczywiście istnieje:
+
+```bash
+sudo git config --system --get-all safe.directory
+```
+
+Komenda musi być wykonana przed włączeniem timera. Nazwę właściciela klonu potwierdź u
+siebie (`stat -c '%U' /srv/wedding/app`) — w tym runbooku jest nią `kris`.
 
 **Agent działa jako `root` — świadomie.** `root` i tak ma dostęp do Dockera, a
 zakładanie osobnego użytkownika usługi i dopisywanie go do grupy `docker` daje na tym
@@ -670,6 +681,23 @@ systemctl status wedding-deploy.timer
 journalctl -u wedding-deploy -n 50 --no-pager
 cat /srv/wedding/deployed-commit
 ```
+
+Najszybsze potwierdzenie, że nowy kod naprawdę odpowiada — endpoint zdrowia. Sprawdza
+przy okazji, czy API widzi bazę **w tej chwili**, a nie tylko czy proces wstał:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' "https://${DOMAIN}/api/health"
+curl -s "https://${DOMAIN}/api/health"
+```
+
+`200` i `{"status":"ok","database":"ok"}` znaczy, że wdrożona wersja działa i ma połączenie
+z Postgresem. `503` i `{"status":"degraded","database":"unreachable"}` znaczy, że API
+odpowiada, ale baza jest nieosiągalna — wtedy patrz na kontener `db`, nie na kod. Brak
+odpowiedzi w ogóle to problem z `api` albo z Caddy.
+
+Endpoint jest publiczny i celowo nie zwraca żadnych szczegółów awarii — ani treści
+wyjątku, ani connection stringa. Przed wdrożeniem tej wersji zwraca `404`, co samo w sobie
+jest wygodnym testem, czy wdrożenie w ogóle doszło.
 
 **Przycisk w GitHubie zapala się na zielono, gdy tag się przestawi — nie gdy wdrożenie
 się uda.** Prawda jest tylko w journalu.
