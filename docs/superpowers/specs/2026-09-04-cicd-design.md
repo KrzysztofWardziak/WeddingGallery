@@ -89,14 +89,43 @@ Three files ship in the repository under `deploy/`:
 The unit name is what `journalctl -u wedding-deploy` refers to throughout this document.
 The agent operates on the existing clone at `/srv/wedding/app`.
 
+**The script is copied to `/usr/local/bin/wedding-deploy` at install time rather than run
+out of the working tree.** Running it in place would have the agent executing a file that
+its own `git checkout` is replacing underneath it. Nothing good is guaranteed to come of
+that, and the cost of avoiding it is one `install` command that the runbook already has to
+document for the unit files.
+
+### State, and why `HEAD` is not enough
+
+Progress is tracked in two files outside the repository, where a checkout cannot reach
+them:
+
+- `/srv/wedding/deployed-commit` - the commit whose deploy **finished successfully**
+- `/srv/wedding/failed-commit` - the commit whose deploy failed
+
+Comparing the tag against `HEAD` would look sufficient and is not. The checkout happens
+before the build, so a failing build leaves `HEAD` already at the new commit while the old
+containers keep serving. On the next tick the agent would see tag equal to `HEAD`, conclude
+it had nothing to do, and never retry - the repository and the running application silently
+disagreeing, with nothing reporting it.
+
 Each run:
 
 1. `git fetch --tags --force --prune`
 2. No `production` tag yet - exit quietly. This is the state before the first deploy and
    must not look like a failure.
-3. Tag resolves to the current `HEAD` - exit quietly. The common case.
-4. Otherwise check out that commit detached, `docker compose build`, and on success
-   `docker compose up -d`.
+3. Tag matches `deployed-commit` - exit quietly. The common case.
+4. Tag matches `failed-commit` - exit quietly, saying so. **One attempt per tag move.** A
+   broken commit must not rebuild every two minutes forever, filling the journal and
+   loading the machine. Retrying means moving the tag again, or deleting that file; both
+   are in the runbook.
+5. Otherwise: check out the commit detached, `docker compose build`, then `docker compose
+   up -d`. On success record `deployed-commit` and clear `failed-commit`; on failure record
+   `failed-commit` and exit non-zero so the unit shows as failed.
+
+The checkout uses `--force`, which discards local edits to **tracked** files. Untracked and
+ignored files are untouched, so the server's `.env` is safe. Without it, one stray local
+edit would wedge every future deploy.
 
 **Overlapping runs cannot happen.** A build can outlast the two-minute interval, but
 systemd will not start a unit that is still active, so the timer simply skips.
@@ -116,9 +145,12 @@ an explicit `-f`.
   the server does afterwards. The truth lives in `journalctl -u wedding-deploy`. Reporting
   back would need a return path from a machine with no inbound route - a separate problem.
 - **Up to two minutes** between pressing the button and the deploy starting.
-- **Unit and timer files are installed by hand, once.** The agent script updates itself
-  with each deploy since it ships in the repository, but a change to the `.service` or
-  `.timer` needs reinstalling on the server.
+- **The agent is installed by hand, once.** The script and both unit files are copied out
+  of the repository at install time, so changing any of them needs the install step run
+  again on the server. This is the price of not executing a script that a checkout is
+  rewriting underneath it.
+- **A failed deploy stops and waits for a human.** It does not retry on its own, and the
+  only place that says so is the journal.
 - **No health check.** A deploy that builds and starts but serves errors looks identical to
   a good one.
 
@@ -127,8 +159,10 @@ an explicit `-f`.
 - The workflows are verified by pushing the branch and reading the runs; a workflow that
   has never executed is not evidence of anything.
 - The agent script is exercised locally against a scratch clone with a synthetic
-  `production` tag, covering: no tag at all, tag already at `HEAD`, tag moved forward, and
-  a failing build leaving the previous containers running.
+  `production` tag and a stub `docker` on `PATH` that records its invocations and can be
+  made to fail on demand. Cases: no tag at all, tag already deployed, tag moved forward, a
+  failing build leaving the previous containers untouched, and the same failed commit
+  skipped on the following run.
 - **Not verifiable here:** the real server. Installing the timer and the first convergence
   are manual steps, written into the runbook.
 
