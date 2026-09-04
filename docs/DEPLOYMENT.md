@@ -542,7 +542,12 @@ pliku, który jego własny `git checkout` podmienia mu pod nogami.
 ### Wdrożenie
 
 Actions → Deploy → Run workflow → podaj commit, gałąź lub tag (domyślnie `master`).
-W ciągu dwóch minut serwer się przełączy.
+W ciągu dwóch minut serwer się przełączy. Żeby nie czekać na timer, można wymusić
+natychmiastowe sprawdzenie tagu:
+
+```bash
+sudo systemctl start wedding-deploy.service
+```
 
 ### Cofnięcie
 
@@ -574,13 +579,20 @@ Ponowna próba tego samego commita:
 sudo rm /srv/wedding/failed-commit
 ```
 
+Samo usunięcie pliku nic jeszcze nie zmienia — dopiero kolejne uruchomienie agenta
+podejmie próbę ponownie. Żeby nie czekać do dwóch minut, wymuś je od razu:
+
+```bash
+sudo systemctl start wedding-deploy.service
+```
+
 Nieudany `build` **nie rusza działających kontenerów** — galeria dalej chodzi na starym
 kodzie, a commit trafia do `failed-commit` i nie jest ponawiany automatycznie. Nieudane
 `up -d` jest traktowane inaczej: ten commit **nie** trafia do `failed-commit`, bo stos
 może zostać w stanie połowicznie uruchomionym, a przyczyny (zajęty port, wolny wolumen,
-chwilowy OOM przy odtwarzaniu kontenera) bywają przejściowe — kolejny tick spróbuje tego
-samego commita ponownie bez interwencji człowieka. Warto wtedy zajrzeć od razu do
-journala.
+chwilowy OOM przy odtwarzaniu kontenera) bywają przejściowe — kolejne uruchomienie
+spróbuje tego samego commita ponownie bez interwencji człowieka. Warto wtedy zajrzeć od
+razu do journala.
 
 ### Ręczne wdrożenie (awaryjnie)
 
