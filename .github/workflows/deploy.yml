@@ -1,0 +1,53 @@
+name: Deploy
+
+# The server is behind DS-Lite and cannot be reached from here. This workflow does not
+# deploy anything itself: it moves the `production` tag, and the agent on the server
+# converges onto it within two minutes.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit SHA, branch or tag to deploy'
+        required: true
+        default: master
+
+permissions:
+  contents: write
+
+jobs:
+  move-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The input reaches the shell through env, never through ${{ }} inside run:.
+      # Interpolating it directly would let the value inject shell commands.
+      - name: Resolve the ref to a commit
+        id: resolve
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          # checkout@v4 fetches branches into refs/remotes/origin/* and only creates
+          # a local branch for the dispatched ref, so a plain branch name (including
+          # the default) does not resolve on its own. Resolve origin/ first, then the
+          # literal ref, which covers SHAs and tags.
+          if ! sha="$(git rev-parse --verify --quiet "origin/${REF}^{commit}")"; then
+            if ! sha="$(git rev-parse --verify --quiet "${REF}^{commit}")"; then
+              echo "Could not resolve ref '${REF}' to a commit (tried origin/${REF} and ${REF})." >&2
+              exit 1
+            fi
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Deploying ${sha} (from ${REF})"
+
+      - name: Move the production tag
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag --force production "${SHA}"
+          git push --force origin refs/tags/production
+          echo "production now points at ${SHA}"

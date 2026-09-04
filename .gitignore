@@ -37,3 +37,6 @@ data/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Subagent-driven development scratch space
+.superpowers/

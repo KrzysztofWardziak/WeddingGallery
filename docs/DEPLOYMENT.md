@@ -275,11 +275,35 @@ Przejdź po kolei przez poniższe punkty:
 
 ## 6. Aktualizacja aplikacji
 
+Od wprowadzenia CI/CD wdrożenia robi się przyciskiem w GitHubie — patrz sekcja 11.
+Ręczna ścieżka opisana niżej pozostaje ważna i jest awaryjnym wyjściem, gdy agent nie
+działa.
+
 ```bash
 cd /srv/wedding/app
-git pull
-docker compose up -d --build
-docker compose logs -f api
+git fetch --tags --force origin
+git checkout --detach --force production
+docker compose build && docker compose up -d
+```
+
+Kolejność ma znaczenie: `build` nie rusza działających kontenerów, więc nieudana
+kompilacja nie kładzie galerii. Dopiero `up -d` restartuje.
+
+**Powyższe komendy uruchamiaj przez `sudo`, jeśli agent CI/CD był już kiedykolwiek
+uruchomiony.** Agent działa jako `root` (patrz sekcja 11), więc po jego pierwszym
+przebiegu w katalogu `/srv/wedding/app` leżą obiekty gita należące do `root` —
+`.git/objects`, `.git/refs`, `.git/FETCH_HEAD`. `git fetch` ani `git checkout`
+wykonane jako `kris` nie będą wtedy mogły ich nadpisać i skończą się błędem
+`Permission denied`. Ręczną ścieżkę awaryjną wykonuj więc jako `sudo -i`, w tej
+samej roli, w jakiej pracuje agent:
+
+```bash
+sudo -i
+cd /srv/wedding/app
+git fetch --tags --force origin
+git checkout --detach --force production
+docker compose build && docker compose up -d
+exit
 ```
 
 Migracje EF Core są stosowane automatycznie przy starcie kontenera `api`
@@ -509,3 +533,210 @@ Skrócony plan zmian — pełne uzasadnienie architektoniczne obu wariantów jes
    i przełącz tam rekordy `@`/`www` w tryb **DNS only** (szara chmurka) zamiast
    proxy, żeby ruch szedł bezpośrednio do serwera z pominięciem tunelu.
 5. Usuń z Zero Trust tunel, który przestał być używany.
+
+## 11. Automatyczne wdrożenia (CI/CD)
+
+Serwer jest za DS-Lite, więc GitHub nie ma jak się do niego połączyć. Wdrożenie jest
+odwrócone: przycisk w GitHubie przestawia tag `production`, a timer na serwerze co dwie
+minuty sam się do niego zbiega.
+
+### Instalacja agenta (jednorazowa)
+
+```bash
+cd /srv/wedding/app
+sudo install -m 755 deploy/wedding-deploy.sh /usr/local/bin/wedding-deploy
+sudo install -m 644 deploy/wedding-deploy.service /etc/systemd/system/
+sudo install -m 644 deploy/wedding-deploy.timer /etc/systemd/system/
+sudo systemd-analyze verify /etc/systemd/system/wedding-deploy.service
+sudo git config --global --add safe.directory /srv/wedding/app
+sudo systemctl daemon-reload
+sudo systemctl enable --now wedding-deploy.timer
+```
+
+**Linia `safe.directory` nie jest opcjonalna.** Agent działa jako `root`, a klon w
+`/srv/wedding/app` należy do użytkownika `kris`. Git od wersji 2.35.2 odmawia
+jakiejkolwiek operacji w repozytorium należącym do innego użytkownika i przerywa z
+komunikatem `fatal: detected dubious ownership in repository`. Bez tej komendy
+pierwszy `git fetch` agenta kończy się błędem, agent wychodzi z kodem 1 bez zapisania
+stanu i powtarza to samo co dwie minuty, nie wdrażając nigdy niczego. Komenda musi
+być wykonana przez `sudo` (konfiguracja globalna **roota**, nie `krisa`) i przed
+włączeniem timera.
+
+**Agent działa jako `root` — świadomie.** `root` i tak ma dostęp do Dockera, a
+zakładanie osobnego użytkownika usługi i dopisywanie go do grupy `docker` daje na tym
+hoście dokładnie te same uprawnienia, więc nie byłoby to zabezpieczenie, tylko dodatkowy
+element do utrzymania. Konsekwencja jest jedna i trzeba o niej pamiętać: po pierwszym
+przebiegu agenta w klonie pojawiają się obiekty gita należące do `root`, więc ręczna
+ścieżka awaryjna z sekcji 6 musi być od tego momentu wykonywana jako `root`
+(`sudo -i`), a nie jako `kris`.
+
+**`DATA_ROOT` w `.env` musi być ścieżką absolutną poza `/srv/wedding/app`** — na tym
+serwerze `DATA_ROOT=/srv/wedding` (patrz sekcja 3). Wartość względna, np. `./data`
+z przykładu dla developmentu lokalnego, umieściłaby dane wewnątrz repozytorium, a więc
+wewnątrz kontekstu budowania Dockera: `docker compose build` próbowałby wciągnąć całe
+drzewo mediów gości oraz katalog danych PostgreSQL (prawa `0700`, nieczytelny) i padłby
+na błędzie odczytu kontekstu. Każde wdrożenie kończyłoby się wtedy porażką. Sprawdź to
+przed włączeniem timera:
+
+```bash
+grep '^DATA_ROOT=' /srv/wedding/app/.env
+```
+
+Skrypt i pliki jednostek są **kopiowane** z repozytorium. Zmiana któregokolwiek z nich
+wymaga powtórzenia tych komend — agent nie aktualizuje się sam, bo nie może wykonywać
+pliku, który jego własny `git checkout` podmienia mu pod nogami.
+
+Jednostka ma `TimeoutStartSec=2700s` (45 minut). Zawieszone budowanie musi kiedyś
+zostać przerwane, bo dopóki jednostka jest aktywna, systemd nie uruchomi kolejnego
+przebiegu i żadne następne wdrożenie się nie wykona. Zimne budowanie obrazów .NET i
+Angulara na tym serwerze zajmuje rzędu dziesięciu minut, więc 45 minut zostawia zapas
+na pusty cache Dockera i obciążoną maszynę, a jednocześnie nie blokuje agenta na wieczność.
+
+### Wdrożenie
+
+Actions → Deploy → Run workflow → podaj commit, gałąź lub tag (domyślnie `master`).
+W ciągu dwóch minut serwer się przełączy. Żeby nie czekać na timer, można wymusić
+natychmiastowe sprawdzenie tagu:
+
+```bash
+sudo systemctl start wedding-deploy.service
+```
+
+### Cofnięcie
+
+Ten sam przycisk ze starszym SHA. To jedyny mechanizm — nie ma osobnej procedury awaryjnej.
+
+**Cofnięcie odtwarza kod, ale nie bazę danych.** Kontener `api` wykonuje przy każdym
+starcie `db.Database.Migrate()` (`Program.cs`), a EF Core migracji nie umie cofać:
+schemat pozostaje w wersji, do której został raz podniesiony. Z tego wynika granica
+bezpieczeństwa:
+
+- **Bezpieczne:** cofnięcie na commit, między którym a wdrożonym obecnie commitem
+  **nie ma żadnej migracji**. Wraca wyłącznie kod, schemat i tak się nie zmienia.
+- **Nieobsługiwane:** cofnięcie przez migrację „w tył”. Stary kod dostaje wtedy nowszy
+  schemat, którego nie zna. Migracje `AddMediaType` i `AddEventDate` są dokładnie tego
+  rodzaju — kolumny, których stara wersja API nie mapuje albo których wymaga jako
+  `NOT NULL`. Skutkiem jest API, które nie startuje albo sypie błędami przy zapisie,
+  i **jedynym wyjściem jest odtworzenie bazy ze zrzutu** — samo ponowne przestawienie
+  tagu tego nie naprawi.
+
+Czy między dwoma commitami jest migracja, sprawdzisz tak:
+
+```bash
+git log --oneline <stary-sha>..<obecny-sha> -- WeddingGallery.Api/Migrations
+```
+
+Pusty wynik oznacza, że cofnięcie jest bezpieczne. Niepusty — potrzebne jest odtworzenie
+bazy.
+
+**Zabezpieczenie: zrzut bazy przed każdym wdrożeniem, które nosi migrację.** Wykonaj
+zrzut `pg_dump` komendą z **sekcji 7** („Kopie zapasowe”, pierwszy blok — `set -a && . ./.env`
+i `docker compose exec -T db pg_dump ... | gzip > /srv/wedding/backup/db-$(date +%F).sql.gz`)
+**przed** naciśnięciem przycisku, a nie po. Dopiero ten plik czyni cofnięcie przez
+migrację w ogóle możliwym; bez niego jest ono nieodwracalne. W dniu wesela, gdy goście
+wgrywają zdjęcia na bieżąco, zrzut z wczoraj to utracone wpisy — rób go bezpośrednio
+przed wdrożeniem.
+
+### Zamrożenie wdrożeń (dzień wesela)
+
+W trakcie imprezy nieudane wdrożenie jest nie do odkręcenia: goście wgrywają zdjęcia i
+filmy na bieżąco, a timer zbiega się do tagu co dwie minuty, także po restarcie serwera.
+Dlatego agent na samym początku sprawdza plik-wartownik i jeśli istnieje, nie robi
+zupełnie nic — nie pobiera nawet tagu:
+
+```bash
+sudo touch /srv/wedding/HOLD
+```
+
+Od tej chwili każdy przebieg kończy się kodem 0 i wpisem w journalu, że wdrożenia są
+zamrożone. Przestawienie tagu w GitHubie nadal działa, tylko nie zostaje zastosowane —
+zostanie wdrożone po zdjęciu blokady. Zdjęcie blokady:
+
+```bash
+sudo rm /srv/wedding/HOLD
+sudo systemctl start wedding-deploy.service   # opcjonalnie: nie czekaj na timer
+```
+
+Alternatywą jest zatrzymanie samego timera (`sudo systemctl stop wedding-deploy.timer`),
+ale jest to rozwiązanie cięższe: timer trzeba potem pamiętać o ponownym uruchomieniu, a
+`enable` sprawia, że po restarcie serwera i tak wróci. Plik `HOLD` jest odporny na restart
+i widoczny na pierwszy rzut oka w `ls /srv/wedding`, więc to on jest procedurą na dzień
+wesela.
+
+### Co się dzieje i czy się udało
+
+```bash
+systemctl status wedding-deploy.timer
+journalctl -u wedding-deploy -n 50 --no-pager
+cat /srv/wedding/deployed-commit
+```
+
+**Przycisk w GitHubie zapala się na zielono, gdy tag się przestawi — nie gdy wdrożenie
+się uda.** Prawda jest tylko w journalu.
+
+### Nieudane wdrożenie
+
+Agent próbuje **raz na przestawienie tagu**. Po porażce checkout albo `docker compose
+build` zapisuje commit i przestaje, żeby nie przebudowywać co dwie minuty w kółko:
+
+```bash
+cat /srv/wedding/failed-commit
+```
+
+Ponowna próba tego samego commita:
+
+```bash
+sudo rm /srv/wedding/failed-commit
+```
+
+Samo usunięcie pliku nic jeszcze nie zmienia — dopiero kolejne uruchomienie agenta
+podejmie próbę ponownie. Żeby nie czekać do dwóch minut, wymuś je od razu:
+
+```bash
+sudo systemctl start wedding-deploy.service
+```
+
+Nieudany `build` **nie rusza działających kontenerów** — galeria dalej chodzi na starym
+kodzie, a commit trafia do `failed-commit` i nie jest ponawiany automatycznie. Tak samo
+traktowany jest niepoprawny `docker-compose.yml`: przed budowaniem agent uruchamia
+`docker compose config -q`, więc plik zepsuty w sposób, którego `build` by nie zauważył,
+zostaje wyłapany, zanim `up -d` położy galerię.
+
+Nieudane `up -d` jest traktowane inaczej: ten commit **nie** trafia od razu do
+`failed-commit`, bo stos może zostać w stanie połowicznie uruchomionym, a przyczyny
+(zajęty port, wolny wolumen, chwilowy OOM przy odtwarzaniu kontenera) bywają przejściowe —
+kolejne uruchomienie spróbuje tego samego commita ponownie bez interwencji człowieka.
+Warto wtedy zajrzeć od razu do journala.
+
+**Ponawianie `up -d` jest jednak ograniczone do trzech prób.** Każda próba może zatrzymać
+i odtworzyć kontenery, więc commit, który nigdy nie wstanie, migałby galerią co dwie
+minuty bez końca. Agent liczy kolejne niepowodzenia `up -d` dla tego samego commita w
+pliku:
+
+```bash
+cat /srv/wedding/up-failures     # np. "a1b2c3... 2"
+```
+
+Przy trzecim niepowodzeniu z rzędu commit trafia do `failed-commit` i agent przestaje
+próbować — dokładnie tak, jak po nieudanym `build`. Licznik zeruje się po udanym
+wdrożeniu oraz gdy tag wskaże inny commit. Ponowna próba po wyczerpaniu limitu wymaga
+usunięcia `failed-commit` (patrz wyżej); plik `up-failures` można usunąć razem z nim.
+
+Po **udanym** wdrożeniu agent wywołuje `docker image prune -f`, żeby warstwy z kolejnych
+budowań nie zapełniały tego samego dysku, na którym leżą baza i zdjęcia gości. Nieudany
+prune **nie** unieważnia wdrożenia — zostaje tylko ostrzeżenie w journalu.
+
+### Ręczne wdrożenie (awaryjnie)
+
+Gdy agent nie działa. Wykonuj to jako `root` — agent działa jako `root`, więc po jego
+przebiegach obiekty gita w klonie należą do `root` i te same komendy jako `kris`
+skończą się na `Permission denied` (patrz sekcja 6):
+
+```bash
+sudo -i
+cd /srv/wedding/app
+git fetch --tags --force origin
+git checkout --detach --force production
+docker compose build && docker compose up -d
+exit
+```
