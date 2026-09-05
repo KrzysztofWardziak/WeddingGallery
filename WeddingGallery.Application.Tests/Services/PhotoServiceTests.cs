@@ -200,6 +200,95 @@ public class PhotoServiceTests : IDisposable
         Assert.Empty(_repository.Saved);
     }
 
+    [Fact]
+    public async Task Streams_the_archive_without_holding_it_in_memory()
+    {
+        var service = CreateService(new FakeThumbnailGenerator(succeed: true));
+        var eventId = Guid.NewGuid();
+        await service.UploadPhotoAsync(eventId, "Ania", File("kiss.jpg", "first"));
+        await service.UploadPhotoAsync(eventId, "Bartek", File("dance.mp4", "second"));
+
+        using var output = new MemoryStream();
+        await service.WriteZipArchiveToAsync(eventId, output);
+
+        output.Position = 0;
+        using var archive = new System.IO.Compression.ZipArchive(output, System.IO.Compression.ZipArchiveMode.Read);
+        Assert.Equal(2, archive.Entries.Count);
+        Assert.Contains(archive.Entries, e => e.FullName == "Ania_kiss.jpg");
+        Assert.Contains(archive.Entries, e => e.FullName == "Bartek_dance.mp4");
+    }
+
+    [Fact]
+    public async Task Leaves_the_output_stream_open_for_its_owner()
+    {
+        // The archive is written straight into the HTTP response, which is not ours to close.
+        var service = CreateService(new FakeThumbnailGenerator(succeed: true));
+        var eventId = Guid.NewGuid();
+        await service.UploadPhotoAsync(eventId, "Ania", File("kiss.jpg"));
+
+        using var output = new MemoryStream();
+        await service.WriteZipArchiveToAsync(eventId, output);
+
+        Assert.True(output.CanWrite);
+    }
+
+    [Fact]
+    public async Task Strips_directory_traversal_out_of_entry_names()
+    {
+        // Photo.FileName keeps whatever the guest's device sent; only the on-disk path was
+        // ever sanitised. An entry named with ".." makes an archive that a naive extractor
+        // follows out of its target directory, on the machine of whoever downloads it.
+        var service = CreateService(new FakeThumbnailGenerator(succeed: true));
+        var eventId = Guid.NewGuid();
+        await service.UploadPhotoAsync(eventId, "../../../root", File("../../../../etc/passwd.jpg"));
+
+        using var output = new MemoryStream();
+        await service.WriteZipArchiveToAsync(eventId, output);
+
+        output.Position = 0;
+        using var archive = new System.IO.Compression.ZipArchive(output, System.IO.Compression.ZipArchiveMode.Read);
+        var name = archive.Entries.Single().FullName;
+        Assert.DoesNotContain("..", name);
+        Assert.DoesNotContain("/", name);
+        Assert.DoesNotContain("\\", name);
+        Assert.Equal("root_passwd.jpg", name);
+    }
+
+    [Fact]
+    public async Task Gives_a_duplicate_filename_its_own_entry()
+    {
+        // A duplicate entry is legal in a zip but silently overwrites on extraction, which
+        // would quietly cost the couple a photo.
+        var service = CreateService(new FakeThumbnailGenerator(succeed: true));
+        var eventId = Guid.NewGuid();
+        await service.UploadPhotoAsync(eventId, "Ania", File("IMG_1234.jpg", "one"));
+        await service.UploadPhotoAsync(eventId, "Ania", File("IMG_1234.jpg", "two"));
+
+        using var output = new MemoryStream();
+        await service.WriteZipArchiveToAsync(eventId, output);
+
+        output.Position = 0;
+        using var archive = new System.IO.Compression.ZipArchive(output, System.IO.Compression.ZipArchiveMode.Read);
+        Assert.Equal(2, archive.Entries.Count);
+        Assert.Equal(2, archive.Entries.Select(e => e.FullName).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Since_returns_only_photos_created_after_it()
+    {
+        var service = CreateService(new FakeThumbnailGenerator(succeed: true));
+        var eventId = Guid.NewGuid();
+        var older = await service.UploadPhotoAsync(eventId, "Ania", File("old.jpg"));
+        var cutoff = older.CreatedAt;
+        var newer = await service.UploadPhotoAsync(eventId, "Bartek", File("new.jpg"));
+
+        var all = await service.GetPhotosByEventAsync(eventId);
+        var incremental = await service.GetPhotosByEventAsync(eventId, cutoff);
+
+        Assert.Equal(2, all.Count());
+        Assert.Equal(new[] { newer.Id }, incremental.Select(p => p.Id));
+    }
+
     private sealed class FakeThumbnailGenerator : IThumbnailGenerator
     {
         private readonly bool _succeed;
@@ -246,8 +335,14 @@ public class PhotoServiceTests : IDisposable
         public Task<IEnumerable<Photo>> GetAllAsync() =>
             Task.FromResult<IEnumerable<Photo>>(Saved);
 
-        public Task<IEnumerable<Photo>> GetByEventIdAsync(Guid eventId) =>
-            Task.FromResult<IEnumerable<Photo>>(Saved.Where(p => p.EventId == eventId).ToList());
+        // Mirrors the real repository: newest first, and `since` is strictly exclusive.
+        // A fake that ignored the filter would make the test asserting it pass vacuously.
+        public Task<IEnumerable<Photo>> GetByEventIdAsync(Guid eventId, DateTime? since = null) =>
+            Task.FromResult<IEnumerable<Photo>>(
+                Saved.Where(p => p.EventId == eventId)
+                     .Where(p => !since.HasValue || p.CreatedAt > since.Value)
+                     .OrderByDescending(p => p.CreatedAt)
+                     .ToList());
 
         public Task UpdateAsync(Photo entity) => Task.CompletedTask;
 

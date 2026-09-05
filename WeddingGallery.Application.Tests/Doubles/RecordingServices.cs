@@ -30,10 +30,10 @@ public sealed class RecordingPhotoService : IPhotoService
     public Task<Photo> AdoptFileAsync(Guid eventId, string? uploaderName, string originalFileName, string mediaType, string sourceFilePath) =>
         throw new NotSupportedException();
 
-    public Task<IEnumerable<Photo>> GetPhotosByEventAsync(Guid eventId) =>
+    public Task<IEnumerable<Photo>> GetPhotosByEventAsync(Guid eventId, DateTime? since = null) =>
         Task.FromResult<IEnumerable<Photo>>(Array.Empty<Photo>());
 
-    public Task<(byte[] ZipFileBytes, string FileName)> GetZipArchiveOfEventPhotosAsync(Guid eventId) =>
+    public Task WriteZipArchiveToAsync(Guid eventId, Stream output) =>
         throw new NotSupportedException();
 
     public Task DeletePhotoAsync(Guid photoId) => throw new NotSupportedException();

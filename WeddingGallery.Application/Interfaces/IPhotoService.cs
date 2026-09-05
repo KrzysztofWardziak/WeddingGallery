@@ -22,8 +22,18 @@ namespace WeddingGallery.Application.Interfaces
         /// </summary>
         Task<Photo> AdoptFileAsync(Guid eventId, string? uploaderName, string originalFileName, string mediaType, string sourceFilePath);
 
-        Task<IEnumerable<Photo>> GetPhotosByEventAsync(Guid eventId);
-        Task<(byte[] ZipFileBytes, string FileName)> GetZipArchiveOfEventPhotosAsync(Guid eventId);
+        /// <summary>
+        /// Newest first. <paramref name="since"/> returns only photos created after that
+        /// instant, which is how the guest feed polls without re-fetching the whole gallery
+        /// every ten seconds. Must be UTC.
+        /// </summary>
+        Task<IEnumerable<Photo>> GetPhotosByEventAsync(Guid eventId, DateTime? since = null);
+        /// <summary>
+        /// Writes the event's media into <paramref name="output"/> as it goes. Nothing is
+        /// buffered: the previous version built the whole archive in memory and then copied
+        /// it again into a byte array, so a five gigabyte gallery needed ten gigabytes of RAM.
+        /// </summary>
+        Task WriteZipArchiveToAsync(Guid eventId, Stream output);
         Task DeletePhotoAsync(Guid photoId);
 
         /// <summary>

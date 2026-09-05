@@ -17,6 +17,11 @@ export interface GalleryItem {
 
 const POLL_INTERVAL_MS = 10000;
 
+// Incremental polls never learn that something was deleted, because they only ever ask for
+// what is newer. Every so often the feed refetches everything so an admin's deletion reaches
+// guests who have had the page open all evening. Thirty polls is five minutes.
+const FULL_REFRESH_EVERY = 30;
+
 @Component({
   selector: 'app-guest-feed',
   standalone: true,
@@ -32,6 +37,7 @@ export class GuestFeedComponent implements OnInit, OnDestroy {
   searchTerm = '';
 
   private pollHandle: ReturnType<typeof setInterval> | null = null;
+  private pollCount = 0;
 
   get filteredPhotos(): GalleryItem[] {
     if (!this.searchTerm.trim()) return this.photos;
@@ -62,10 +68,30 @@ export class GuestFeedComponent implements OnInit, OnDestroy {
   }
 
   loadPhotos() {
-    this.apiService.getPhotos(this.eventId).subscribe({
-      next: (data) => this.photos = data as GalleryItem[],
+    const isFullRefresh = this.pollCount % FULL_REFRESH_EVERY === 0;
+    this.pollCount++;
+
+    // The list is newest first, so the first entry is the high-water mark.
+    const since = isFullRefresh ? undefined : this.photos[0]?.uploadedAt;
+
+    this.apiService.getPhotos(this.eventId, since).subscribe({
+      next: (data) => {
+        const incoming = data as GalleryItem[];
+        this.photos = isFullRefresh ? incoming : this.mergeNewest(incoming);
+      },
       error: (err) => console.error(err)
     });
+  }
+
+  // Incoming items are all newer than everything held, so they belong in front. Deduplicated
+  // by id because two photos can share a timestamp and `since` is exclusive on time alone.
+  private mergeNewest(incoming: GalleryItem[]): GalleryItem[] {
+    if (incoming.length === 0) return this.photos;
+
+    const known = new Set(this.photos.map(p => p.id));
+    const fresh = incoming.filter(p => !known.has(p.id));
+
+    return fresh.length === 0 ? this.photos : [...fresh, ...this.photos];
   }
 
   // Videos whose poster frame could not be produced come back with an empty thumbUrl;

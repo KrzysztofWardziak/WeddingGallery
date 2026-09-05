@@ -247,7 +247,7 @@ public class ChunkedUploadServiceTests : IDisposable
 
         public Task<Photo?> GetByIdAsync(Guid id) => Task.FromResult(Saved.FirstOrDefault(p => p.Id == id));
         public Task<IEnumerable<Photo>> GetAllAsync() => Task.FromResult<IEnumerable<Photo>>(Saved);
-        public Task<IEnumerable<Photo>> GetByEventIdAsync(Guid eventId) =>
+        public Task<IEnumerable<Photo>> GetByEventIdAsync(Guid eventId, DateTime? since = null) =>
             Task.FromResult<IEnumerable<Photo>>(Saved.Where(p => p.EventId == eventId).ToList());
         public Task UpdateAsync(Photo entity) => Task.CompletedTask;
         public Task DeleteAsync(Photo entity) { Saved.Remove(entity); return Task.CompletedTask; }

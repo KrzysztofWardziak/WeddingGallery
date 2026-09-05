@@ -11,9 +11,18 @@ namespace WeddingGallery.Infrastructure.Repositories
         {
         }
 
-        public async Task<IEnumerable<Photo>> GetByEventIdAsync(Guid eventId)
+        public async Task<IEnumerable<Photo>> GetByEventIdAsync(Guid eventId, DateTime? since = null)
         {
-            return await _dbSet.Where(p => p.EventId == eventId).OrderByDescending(p => p.CreatedAt).ToListAsync();
+            var query = _dbSet.Where(p => p.EventId == eventId);
+
+            // Branching here rather than folding the null check into the predicate keeps the
+            // generated SQL free of a constant comparison EF would otherwise carry along.
+            if (since.HasValue)
+            {
+                query = query.Where(p => p.CreatedAt > since.Value);
+            }
+
+            return await query.OrderByDescending(p => p.CreatedAt).ToListAsync();
         }
     }
 }
