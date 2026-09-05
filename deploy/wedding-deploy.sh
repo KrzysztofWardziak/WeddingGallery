@@ -129,6 +129,20 @@ if ! docker compose up -d; then
   exit 1
 fi
 
+# Compose recreates a container when its configuration changes, but the contents of a
+# bind-mounted file are not configuration: editing the Caddyfile leaves the running proxy on
+# its old config, and the deploy reports success having changed nothing. Restart it only when
+# that file actually moved, so an ordinary deploy does not drop connections through the proxy
+# for no reason. A first deploy needs no restart - up -d created the container just now.
+if [ -n "$deployed" ] && ! git diff --quiet "$deployed" "$target" -- Caddyfile 2>/dev/null; then
+  echo "Caddyfile changed between ${deployed} and ${target}; restarting the proxy."
+  if ! docker compose restart caddy; then
+    # The application is already serving; only the proxy config is stale. Failing the whole
+    # deploy here would blacklist a commit that is otherwise running fine.
+    echo "WARNING: could not restart caddy; its configuration is stale." >&2
+  fi
+fi
+
 if ! { mkdir -p "$STATE_DIR" && echo "$target" > "$DEPLOYED_FILE"; }; then
   echo "Deploy succeeded but could not record deployed commit to ${DEPLOYED_FILE}." >&2
   exit 1

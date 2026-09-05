@@ -37,7 +37,8 @@
   <div class="columns-2 gap-2 space-y-2">
     <div *ngFor="let photo of photos" class="relative break-inside-avoid bg-white/40 group">
       <!-- thumbUrl, not url: for a video the latter is the clip itself, which an <img> cannot render. -->
-      <img *ngIf="photo.thumbUrl" [src]="imagesUrl + photo.thumbUrl" class="w-full h-auto object-cover rounded shadow-sm"
+      <img *ngIf="photo.thumbUrl" [src]="imagesUrl + photo.thumbUrl" loading="lazy" decoding="async"
+        class="w-full h-auto object-cover rounded shadow-sm"
         [alt]="photo.mediaType === 'video' ? 'Film gościa' : 'Zdjęcie gościa'">
 
       <div *ngIf="!photo.thumbUrl"

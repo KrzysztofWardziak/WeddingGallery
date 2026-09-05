@@ -25,7 +25,7 @@
     
     <div *ngFor="let photo of filteredPhotos; let i = index" class="relative break-inside-avoid bg-white/40 mb-2 cursor-pointer" (click)="openPhoto(i)">
       <!-- Photos are served at full size; a video shows its ffmpeg-extracted poster frame. -->
-      <img *ngIf="hasThumbnail(photo)" [src]="imagesUrl + photo.thumbUrl"
+      <img *ngIf="hasThumbnail(photo)" [src]="imagesUrl + photo.thumbUrl" loading="lazy" decoding="async"
            class="w-full h-auto object-cover rounded shadow-sm"
            [alt]="photo.mediaType === 'video' ? 'Film gościa' : 'Zdjęcie gościa'">
 

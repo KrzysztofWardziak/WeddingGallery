@@ -32,7 +32,13 @@ namespace WeddingGallery.Infrastructure.Media
             return await TryExtractFrameAsync(videoPath, thumbnailPath, "00:00:00", cancellationToken);
         }
 
-        private async Task<bool> TryExtractFrameAsync(string videoPath, string thumbnailPath, string seekPosition, CancellationToken cancellationToken)
+        public Task<bool> TryGenerateImageThumbnailAsync(string imagePath, string thumbnailPath, CancellationToken cancellationToken = default)
+        {
+            // No seek: a still has one frame and asking to seek into it produces nothing.
+            return TryExtractFrameAsync(imagePath, thumbnailPath, seekPosition: null, cancellationToken);
+        }
+
+        private async Task<bool> TryExtractFrameAsync(string videoPath, string thumbnailPath, string? seekPosition, CancellationToken cancellationToken)
         {
             var startInfo = new ProcessStartInfo
             {
@@ -49,10 +55,17 @@ namespace WeddingGallery.Infrastructure.Media
             startInfo.ArgumentList.Add("-loglevel");
             startInfo.ArgumentList.Add("error");
             startInfo.ArgumentList.Add("-y");
-            startInfo.ArgumentList.Add("-ss");
-            startInfo.ArgumentList.Add(seekPosition);
+
+            if (seekPosition is not null)
+            {
+                startInfo.ArgumentList.Add("-ss");
+                startInfo.ArgumentList.Add(seekPosition);
+            }
+
             startInfo.ArgumentList.Add("-i");
             startInfo.ArgumentList.Add(videoPath);
+            // Also guards animated GIFs, which would otherwise write a frame sequence into an
+            // output path that has no numbering pattern, and fail.
             startInfo.ArgumentList.Add("-frames:v");
             startInfo.ArgumentList.Add("1");
             // Never upscale a small clip, and keep both dimensions even for the encoder.
