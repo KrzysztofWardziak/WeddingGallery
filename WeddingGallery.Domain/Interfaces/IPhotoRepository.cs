@@ -4,6 +4,7 @@ namespace WeddingGallery.Domain.Interfaces
 {
     public interface IPhotoRepository : IRepository<Photo>
     {
-        Task<IEnumerable<Photo>> GetByEventIdAsync(Guid eventId);
+        /// <summary>Newest first; <paramref name="since"/> filters to later creations only.</summary>
+        Task<IEnumerable<Photo>> GetByEventIdAsync(Guid eventId, DateTime? since = null);
     }
 }

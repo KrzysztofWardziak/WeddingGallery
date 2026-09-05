@@ -60,28 +60,78 @@ namespace WeddingGallery.Application.Services
             return uploaded;
         }
 
-        public async Task<IEnumerable<Photo>> GetPhotosByEventAsync(Guid eventId)
+        public async Task<IEnumerable<Photo>> GetPhotosByEventAsync(Guid eventId, DateTime? since = null)
         {
-            return await _photoRepository.GetByEventIdAsync(eventId);
+            return await _photoRepository.GetByEventIdAsync(eventId, since);
         }
 
-        public async Task<(byte[] ZipFileBytes, string FileName)> GetZipArchiveOfEventPhotosAsync(Guid eventId)
+        public async Task WriteZipArchiveToAsync(Guid eventId, Stream output)
         {
             var photos = await _photoRepository.GetByEventIdAsync(eventId);
-            using var memoryStream = new MemoryStream();
-            using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, true))
+
+            // leaveOpen: the response stream belongs to the caller, not to us.
+            using var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
+
+            var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var photo in photos)
             {
-                foreach (var photo in photos)
+                var filePath = Path.Combine(_uploadPath, Path.GetFileName(photo.OriginalPath));
+                if (!File.Exists(filePath))
                 {
-                    var filePath = Path.Combine(_uploadPath, Path.GetFileName(photo.OriginalPath));
-                    if (File.Exists(filePath))
-                    {
-                        var entryName = $"{photo.UploaderName}_{photo.FileName}";
-                        archive.CreateEntryFromFile(filePath, entryName);
-                    }
+                    continue;
+                }
+
+                // NoCompression on purpose: JPEG, HEIC and MP4 are already compressed, so
+                // Deflate spends the home server's CPU to save nothing, and on video it can
+                // even grow the file.
+                var entry = archive.CreateEntry(BuildEntryName(photo, usedNames), CompressionLevel.NoCompression);
+
+                await using var entryStream = entry.Open();
+                await using var source = File.OpenRead(filePath);
+                await source.CopyToAsync(entryStream);
+            }
+        }
+
+        private static string BuildEntryName(Photo photo, ISet<string> usedNames)
+        {
+            // Both halves are attacker-controlled. Photo.FileName keeps the guest's original
+            // name verbatim - only the on-disk path was ever sanitised - and the uploader name
+            // is free text. A ".." or a separator in either produces an archive that a naive
+            // extractor follows out of its target directory, on the machine of whoever
+            // downloads it. Path.GetFileName strips both.
+            var safeName = Path.GetFileName(photo.FileName);
+            if (string.IsNullOrWhiteSpace(safeName))
+            {
+                safeName = "plik";
+            }
+
+            var safeUploader = Path.GetFileName(photo.UploaderName);
+            if (string.IsNullOrWhiteSpace(safeUploader))
+            {
+                safeUploader = AnonymousUploaderName;
+            }
+
+            var candidate = $"{safeUploader}_{safeName}";
+            if (usedNames.Add(candidate))
+            {
+                return candidate;
+            }
+
+            // Two guests can upload a file of the same name. A duplicate entry is legal in a
+            // zip but silently overwrites on extraction, so the later copy gets a suffix
+            // rather than disappearing from the couple's archive.
+            var stem = Path.GetFileNameWithoutExtension(safeName);
+            var extension = Path.GetExtension(safeName);
+
+            for (var suffix = 2; ; suffix++)
+            {
+                candidate = $"{safeUploader}_{stem}-{suffix}{extension}";
+                if (usedNames.Add(candidate))
+                {
+                    return candidate;
                 }
             }
-            return (memoryStream.ToArray(), $"Wesele_Galeria.zip");
         }
 
         public async Task DeletePhotoAsync(Guid photoId)

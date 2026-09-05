@@ -113,8 +113,11 @@ export class ApiService {
     return this.http.delete<void>(`${this.baseUrl}/photos/uploads/${uploadId}`);
   }
 
-  getPhotos(eventId: string): Observable<any[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/Photos/event/${eventId}`);
+  // `since` asks only for what arrived after that instant. The guest feed polls every ten
+  // seconds; without it every poll re-downloads the entire gallery.
+  getPhotos(eventId: string, since?: string): Observable<any[]> {
+    const query = since ? `?since=${encodeURIComponent(since)}` : '';
+    return this.http.get<any[]>(`${this.baseUrl}/Photos/event/${eventId}${query}`);
   }
 
   deletePhoto(photoId: string): Observable<any> {

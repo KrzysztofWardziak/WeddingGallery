@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using WeddingGallery.Application.Interfaces;
 using WeddingGallery.Application.Media;
@@ -22,10 +23,14 @@ namespace WeddingGallery.Api.Controllers
             _chunkedUploadService = chunkedUploadService;
         }
 
+        // `since` lets the guest feed poll for what is new instead of re-downloading the whole
+        // gallery every ten seconds. DateTimeOffset rather than DateTime because the binder
+        // would otherwise turn an ISO string with a Z into a local-kind value, and Npgsql
+        // refuses to compare that against a timestamptz column.
         [HttpGet("event/{eventId}")]
-        public async Task<IActionResult> GetPhotos(Guid eventId)
+        public async Task<IActionResult> GetPhotos(Guid eventId, [FromQuery] DateTimeOffset? since)
         {
-            var photos = await _photoService.GetPhotosByEventAsync(eventId);
+            var photos = await _photoService.GetPhotosByEventAsync(eventId, since?.UtcDateTime);
             return Ok(photos.Select(p => new {
                 id = p.Id,
                 url = p.OriginalPath,
@@ -44,8 +49,25 @@ namespace WeddingGallery.Api.Controllers
         {
             if (!ValidateToken()) return Unauthorized();
 
-            var (zipBytes, fileName) = await _photoService.GetZipArchiveOfEventPhotosAsync(eventId);
-            return File(zipBytes, "application/zip", fileName);
+            // ZipArchive writes its central directory synchronously on Dispose and .NET offers
+            // no async equivalent, while Kestrel refuses synchronous writes to the response by
+            // default. Relaxing that for this one request is the documented way out; doing it
+            // globally would let any endpoint block a request thread. A unit test cannot catch
+            // this - MemoryStream permits synchronous writes, so it only surfaces over HTTP.
+            var bodyControl = HttpContext.Features.Get<IHttpBodyControlFeature>();
+            if (bodyControl is not null)
+            {
+                bodyControl.AllowSynchronousIO = true;
+            }
+
+            // Streamed straight into the response: the archive is never held in memory, so a
+            // gallery of any size costs the same. The price is no Content-Length, so the
+            // browser shows no progress bar and a mid-stream failure arrives after a 200.
+            Response.ContentType = "application/zip";
+            Response.Headers.ContentDisposition = "attachment; filename=\"Wesele_Galeria.zip\"";
+
+            await _photoService.WriteZipArchiveToAsync(eventId, Response.Body);
+            return new EmptyResult();
         }
 
         [HttpPost("upload")]
