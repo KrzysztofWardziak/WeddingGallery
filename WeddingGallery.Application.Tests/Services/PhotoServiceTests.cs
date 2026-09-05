@@ -67,16 +67,49 @@ public class PhotoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Does_not_invoke_ffmpeg_for_images()
+    public async Task Gives_an_image_its_own_downscaled_thumbnail()
     {
+        // The gallery grid renders every tile at once. Serving originals there pushed several
+        // megabytes per photo through the couple's home upstream.
         var generator = new FakeThumbnailGenerator(succeed: true);
         var service = CreateService(generator);
 
         var photo = await service.UploadPhotoAsync(Guid.NewGuid(), "Ania", File("kiss.jpg"));
 
         Assert.Equal(MediaTypes.Image, photo.MediaType);
+        Assert.EndsWith("_thumb.jpg", photo.ThumbPath);
+        Assert.NotEqual(photo.OriginalPath, photo.ThumbPath);
+        Assert.Single(generator.Calls);
+    }
+
+    [Fact]
+    public async Task Falls_back_to_the_original_when_an_image_cannot_be_downscaled()
+    {
+        // Images fail differently from videos: there is a picture to fall back to, so a
+        // format this ffmpeg cannot decode - HEIC among them - still shows correctly.
+        var generator = new FakeThumbnailGenerator(succeed: false);
+        var service = CreateService(generator);
+
+        var photo = await service.UploadPhotoAsync(Guid.NewGuid(), "Ania", File("kiss.heic"));
+
         Assert.Equal(photo.OriginalPath, photo.ThumbPath);
-        Assert.Empty(generator.Calls);
+        Assert.NotEmpty(photo.ThumbPath);
+        Assert.True(System.IO.File.Exists(StoredPath(photo.OriginalPath)));
+    }
+
+    [Fact]
+    public async Task Deleting_an_image_also_removes_its_thumbnail_file()
+    {
+        var generator = new FakeThumbnailGenerator(succeed: true, writeFile: true);
+        var service = CreateService(generator);
+        var photo = await service.UploadPhotoAsync(Guid.NewGuid(), "Ania", File("kiss.jpg"));
+        var thumbPath = StoredPath(photo.ThumbPath);
+        Assert.True(System.IO.File.Exists(thumbPath));
+
+        await service.DeletePhotoAsync(photo.Id);
+
+        Assert.False(System.IO.File.Exists(StoredPath(photo.OriginalPath)));
+        Assert.False(System.IO.File.Exists(thumbPath));
     }
 
     [Fact]
@@ -180,9 +213,15 @@ public class PhotoServiceTests : IDisposable
 
         public List<(string VideoPath, string ThumbnailPath)> Calls { get; } = new();
 
-        public Task<bool> TryGenerateVideoThumbnailAsync(string videoPath, string thumbnailPath, CancellationToken cancellationToken = default)
+        public Task<bool> TryGenerateVideoThumbnailAsync(string videoPath, string thumbnailPath, CancellationToken cancellationToken = default) =>
+            RecordAndAnswer(videoPath, thumbnailPath);
+
+        public Task<bool> TryGenerateImageThumbnailAsync(string imagePath, string thumbnailPath, CancellationToken cancellationToken = default) =>
+            RecordAndAnswer(imagePath, thumbnailPath);
+
+        private Task<bool> RecordAndAnswer(string sourcePath, string thumbnailPath)
         {
-            Calls.Add((videoPath, thumbnailPath));
+            Calls.Add((sourcePath, thumbnailPath));
             if (_succeed && _writeFile)
             {
                 System.IO.File.WriteAllBytes(thumbnailPath, new byte[] { 0xFF, 0xD8 });

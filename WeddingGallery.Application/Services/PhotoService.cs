@@ -185,9 +185,7 @@ namespace WeddingGallery.Application.Services
                 FileName = originalFileName,
                 UploaderName = NormaliseUploaderName(uploaderName),
                 OriginalPath = $"/photos/{uniqueFileName}",
-                ThumbPath = mediaType == MediaTypes.Video
-                    ? await GenerateVideoThumbnailAsync(uniqueFileName, filePath)
-                    : $"/photos/{uniqueFileName}", // Images are served at full size; no separate thumb yet.
+                ThumbPath = await GenerateThumbnailAsync(uniqueFileName, filePath, mediaType),
                 MediaType = mediaType,
                 CreatedAt = DateTime.UtcNow
             };
@@ -195,16 +193,29 @@ namespace WeddingGallery.Application.Services
             return await _photoRepository.AddAsync(photo);
         }
 
-        private async Task<string> GenerateVideoThumbnailAsync(string uniqueFileName, string videoPath)
+        // The gallery grid renders every tile at once, so serving originals there meant a
+        // guest pulled several megabytes per photo through the couple's home upstream. A
+        // 640px thumbnail is roughly fifty times smaller.
+        private async Task<string> GenerateThumbnailAsync(string uniqueFileName, string sourcePath, string mediaType)
         {
             var thumbFileName = $"{Path.GetFileNameWithoutExtension(uniqueFileName)}_thumb.jpg";
             var thumbFilePath = Path.Combine(_uploadPath, thumbFileName);
 
-            // An empty ThumbPath is a supported state: the gallery falls back to a placeholder
-            // tile. Losing the guest's video because ffmpeg had a bad day is not acceptable.
-            return await _thumbnailGenerator.TryGenerateVideoThumbnailAsync(videoPath, thumbFilePath)
-                ? $"/photos/{thumbFileName}"
-                : string.Empty;
+            var generated = mediaType == MediaTypes.Video
+                ? await _thumbnailGenerator.TryGenerateVideoThumbnailAsync(sourcePath, thumbFilePath)
+                : await _thumbnailGenerator.TryGenerateImageThumbnailAsync(sourcePath, thumbFilePath);
+
+            if (generated)
+            {
+                return $"/photos/{thumbFileName}";
+            }
+
+            // The two media types fail differently on purpose. A video without a poster frame
+            // gets an empty ThumbPath and the gallery draws a placeholder, because there is no
+            // still to fall back to. An image falls back to its own original - heavier than we
+            // want, but a correct picture rather than a broken tile, and the only behaviour
+            // available for formats this ffmpeg cannot decode, HEIC among them.
+            return mediaType == MediaTypes.Video ? string.Empty : $"/photos/{uniqueFileName}";
         }
 
         private void DeleteStoredFile(string publicPath)

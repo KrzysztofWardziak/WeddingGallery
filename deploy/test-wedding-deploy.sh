@@ -151,6 +151,30 @@ check "invalid compose records failed commit" "$(cat "$STATE/failed-commit")" "$
 check "invalid compose leaves deployed commit unchanged" "$(cat "$STATE/deployed-commit")" "$first"
 unset FAIL_ON
 
+# 11. Caddyfile changed between the deployed commit and the target: the proxy must be
+# restarted, because `compose up -d` does not notice a bind-mounted file's contents changing.
+rm -f "$STATE/failed-commit"
+printf 'proxy config v1
+' > "$WORK/app/Caddyfile"
+git -C "$WORK/app" add Caddyfile && git -C "$WORK/app" commit -qm caddy-v1
+fifth="$(git -C "$WORK/app" rev-parse HEAD)"
+git -C "$WORK/app" push -q origin HEAD:master
+tag_at "$fifth"
+: > "$WORK/docker.log"
+check "caddyfile change deploys" "$(run_agent)" "0"
+check "caddyfile change restarts the proxy" "$(grep -c 'compose restart caddy' "$WORK/docker.log")" "1"
+check "caddyfile change still records the commit" "$(cat "$STATE/deployed-commit")" "$fifth"
+
+# 12. A deploy that leaves the Caddyfile alone must not disturb the proxy: restarting it
+# every time would drop connections through it for no reason.
+echo six > file.txt && git -C "$WORK/app" commit -qam six
+sixth="$(git -C "$WORK/app" rev-parse HEAD)"
+git -C "$WORK/app" push -q origin HEAD:master
+tag_at "$sixth"
+: > "$WORK/docker.log"
+check "untouched caddyfile deploys" "$(run_agent)" "0"
+check "untouched caddyfile leaves the proxy alone" "$(grep -c 'compose restart' "$WORK/docker.log")" "0"
+
 echo
 [ "$failures" -eq 0 ] && echo "ALL PASS" || echo "$failures FAILURES"
 exit $((failures == 0 ? 0 : 1))

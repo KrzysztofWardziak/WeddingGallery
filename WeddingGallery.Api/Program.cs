@@ -129,7 +129,25 @@ contentTypeProvider.Mappings[".m4v"] = "video/x-m4v";
 contentTypeProvider.Mappings[".heic"] = "image/heic";
 contentTypeProvider.Mappings[".heif"] = "image/heif";
 
-app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypeProvider }); // Serve photos and videos
+// Cache policy lives here rather than in the Caddyfile on purpose. The deploy agent runs
+// `docker compose up -d`, which recreates a container only when its configuration changes -
+// and the contents of a bind-mounted Caddyfile are not configuration. A proxy-side header
+// would therefore deploy "successfully" and change nothing until someone restarted Caddy by
+// hand. Owned by the application, it ships with the code like everything else.
+//
+// A day, not a year: names carry a GUID so the bytes never change under a URL, but a photo
+// the couple deletes should stop being reachable by direct link within a day rather than
+// linger at Cloudflare's edge behind an immutable header.
+const int PhotoCacheSeconds = 86400;
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = contentTypeProvider,
+    OnPrepareResponse = context =>
+    {
+        context.Context.Response.Headers.CacheControl = $"public, max-age={PhotoCacheSeconds}";
+    }
+}); // Serve photos and videos
 app.UseCors();
 app.UseAuthorization();
 app.MapControllers();

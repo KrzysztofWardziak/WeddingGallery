@@ -222,7 +222,13 @@ public class ChunkedUploadServiceTests : IDisposable
 
     private sealed class StubThumbnailGenerator : IThumbnailGenerator
     {
-        public Task<bool> TryGenerateVideoThumbnailAsync(string videoPath, string thumbnailPath, CancellationToken cancellationToken = default)
+        public Task<bool> TryGenerateVideoThumbnailAsync(string videoPath, string thumbnailPath, CancellationToken cancellationToken = default) =>
+            Write(thumbnailPath);
+
+        public Task<bool> TryGenerateImageThumbnailAsync(string imagePath, string thumbnailPath, CancellationToken cancellationToken = default) =>
+            Write(thumbnailPath);
+
+        private static Task<bool> Write(string thumbnailPath)
         {
             System.IO.File.WriteAllBytes(thumbnailPath, new byte[] { 0xFF, 0xD8 });
             return Task.FromResult(true);

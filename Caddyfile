@@ -12,8 +12,10 @@ http://{$DOMAIN} {
 		reverse_proxy api:8080
 	}
 
+	# No Cache-Control here: the application sets it (see Program.cs). A header set at this
+	# layer would need a manual `docker compose restart caddy` to take effect, because the
+	# deploy agent's `up -d` does not notice a bind-mounted file's contents changing.
 	handle /photos/* {
-		header Cache-Control "public, max-age=300"
 		reverse_proxy api:8080
 	}
 
